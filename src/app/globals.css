@@ -1,8 +1,41 @@
 @import "tailwindcss";
 
 :root {
+  /* Dark theme (default) - Black theme */
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #1a1a1a;
+  --border: #fbbf24;
+  --border-light: #fcd34d;
+  --primary: #fbbf24;
+  --primary-dark: #f59e0b;
+  --secondary: #fcd34d;
+  --accent: #fbbf24;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --text-primary: #ffffff;
+  --text-secondary: #d1d5db;
+  --hover-bg: #1a1a1a;
+}
+
+.light {
+  /* Light theme - White theme */
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #000000;
+  --card: #f9fafb;
+  --border: #fbbf24;
+  --border-light: #fcd34d;
+  --primary: #fbbf24;
+  --primary-dark: #f59e0b;
+  --secondary: #fcd34d;
+  --accent: #fbbf24;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --text-primary: #000000;
+  --text-secondary: #4b5563;
+  --hover-bg: #f3f4f6;
 }
 
 @theme inline {
@@ -12,15 +45,83 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Default to dark theme */
+html {
+  color-scheme: dark;
+}
+
+html.light {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Hide Next.js watermark/logo - comprehensive rules */
+a[href*="nextjs.org"],
+a[href*="vercel.com"],
+a[href*="vercel.com/new"],
+a[href*="vercel.com/new?utm"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  left: -9999px !important;
+}
+
+/* Hide any Next.js branding elements */
+[data-nextjs-toast],
+[data-nextjs-dialog],
+.nextjs-toast-roots,
+#__next-build-watcher,
+[class*="nextjs"],
+[id*="nextjs"],
+[class*="vercel"],
+[id*="vercel"] {
+  display: none !important;
+}
+
+/* Hide Vercel/Next.js footer watermark - bottom corners */
+footer[class*="next"],
+div[class*="nextjs"],
+div[id*="__next"] > a[href*="vercel"],
+a[style*="position: fixed"][href*="vercel"],
+a[style*="position:fixed"][href*="vercel"],
+a[style*="position: absolute"][href*="vercel"],
+a[style*="position:absolute"][href*="vercel"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Hide fixed positioned elements with Next.js/Vercel links */
+body > a[href*="vercel"],
+body > a[href*="nextjs"],
+html > body > a[href*="vercel"],
+html > body > a[href*="nextjs"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Hide elements containing "Deploy" or "Powered by" text in bottom corners */
+*:not(script):not(style) {
+  position: relative;
+}
+
+/* Additional rule for any element with vercel/nextjs in content */
+*[href*="vercel"]:not([href*="api"]),
+*[href*="nextjs"]:not([href*="api"]) {
+  display: none !important;
 }
