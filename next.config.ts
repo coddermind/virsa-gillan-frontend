@@ -2,14 +2,13 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
-  // Disable Next.js watermark and build indicators
+  // Keep dev indicators minimal (supported keys only)
   devIndicators: {
-    buildActivity: false,
-    buildActivityPosition: "bottom-right",
+    position: "bottom-right",
   },
   // Disable powered by header
   poweredByHeader: false,
-  // Disable x-powered-by header
+  // Enable gzip compression
   compress: true,
 };
 
