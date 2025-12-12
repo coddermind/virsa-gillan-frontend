@@ -23,6 +23,7 @@ export interface User {
   user_type: "user" | "manager";
   user_type_display: string;
   date_joined: string;
+  embed_token?: string;
 }
 
 export interface Cuisine {
@@ -224,7 +225,7 @@ class ApiClient {
       }
     });
 
-    const headers: HeadersInit = {};
+    const headers: Record<string, string> = {};
     if (this.token) {
       headers["Authorization"] = `Token ${this.token}`;
     }
@@ -293,10 +294,13 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      ...options.headers,
     };
+
+    if (options.headers) {
+      Object.assign(headers, options.headers as Record<string, string>);
+    }
 
     if (this.token) {
       headers["Authorization"] = `Token ${this.token}`;
@@ -602,14 +606,14 @@ class ApiClient {
   }
 
   // Public API endpoints (no authentication required)
-  async getPublicCalendar(userId?: string | number | null): Promise<{ 
+  async getPublicCalendar(token?: string | null): Promise<{ 
     events: Event[]; 
     time_slots: TimeSlot[]; 
     cuisines: Cuisine[]; 
     item_types: ItemType[] 
   }> {
-    const url = userId 
-      ? `${API_BASE_URL}/public/calendar/?user_id=${userId}`
+    const url = token 
+      ? `${API_BASE_URL}/public/calendar/?token=${token}`
       : `${API_BASE_URL}/public/calendar/`;
     const response = await fetch(url, {
       method: "GET",
@@ -624,9 +628,9 @@ class ApiClient {
     return response.json();
   }
 
-  async getPublicMenus(userId: number, cuisineId: number, itemTypeId: number): Promise<SubItem[]> {
+  async getPublicMenus(token: string, cuisineId: number, itemTypeId: number): Promise<SubItem[]> {
     const response = await fetch(
-      `${API_BASE_URL}/public/menus/?user_id=${userId}&cuisine=${cuisineId}&item_type=${itemTypeId}`,
+      `${API_BASE_URL}/public/menus/?token=${token}&cuisine=${cuisineId}&item_type=${itemTypeId}`,
       {
         method: "GET",
         headers: {
@@ -641,7 +645,7 @@ class ApiClient {
     return response.json();
   }
 
-  async bookPublicEvent(data: Partial<Event> & { user_id?: number }): Promise<Event> {
+  async bookPublicEvent(data: Partial<Event> & { embed_token?: string }): Promise<Event> {
     const response = await fetch(`${API_BASE_URL}/public/events/book/`, {
       method: "POST",
       body: JSON.stringify(data),

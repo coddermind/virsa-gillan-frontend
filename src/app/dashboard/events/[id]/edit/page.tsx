@@ -661,7 +661,7 @@ export default function EditEventPage() {
                           <div className="flex-1">
                             <div className="font-semibold text-[var(--text-primary)]">{menu.name}</div>
                             <div className="text-sm text-[var(--text-secondary)]">
-                              {menu.cuisine_name} • {menu.item_type_name} • ${menu.price} per person
+                              {menu.cuisine_name} • {menu.item_type_name}
                             </div>
                           </div>
                           <button
@@ -860,9 +860,9 @@ export default function EditEventPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
-                      Menu Item *
-                    </label>
+                  <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                    Menu *
+                  </label>
                     <select
                       value={modalData.item_type}
                       onChange={(e) => setModalData({ ...modalData, item_type: e.target.value, selected_menu_ids: [] })}
@@ -870,7 +870,7 @@ export default function EditEventPage() {
                       disabled={!modalData.cuisine}
                       className="w-full px-4 py-3 bg-[var(--background)] border-2 border-[var(--border)] rounded-lg focus:ring-2 focus:ring-[var(--border)] focus:border-[var(--border)] outline-none text-[var(--text-primary)] transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <option value="">Select Menu Item</option>
+                      <option value="">Select Menu</option>
                       {itemTypes.map((itemType) => (
                         <option key={itemType.id} value={itemType.id}>
                           {itemType.name}
@@ -908,7 +908,7 @@ export default function EditEventPage() {
                           >
                             <div className="font-semibold">{menu.name}</div>
                             <div className="text-sm opacity-80">
-                              ${menu.price || "0.00"} per person
+                              {menu.cuisine_name} • {menu.item_type_name}
                             </div>
                           </button>
                         ))}

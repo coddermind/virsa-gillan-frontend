@@ -25,7 +25,8 @@ export default function EventsPage() {
   const loadEvents = async () => {
     try {
       const data = await apiClient.getEvents();
-      setEvents(Array.isArray(data) ? data : []);
+      const approvedOnly = Array.isArray(data) ? data.filter((e) => e.status === "approved") : [];
+      setEvents(approvedOnly);
     } catch (error) {
       console.error("Failed to load events:", error);
       setEvents([]);
@@ -103,8 +104,8 @@ export default function EventsPage() {
         <div>
           <div className="flex justify-between items-center mb-8">
             <div>
-              <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-2 transition-colors duration-300">Events</h2>
-              <p className="text-[var(--text-secondary)] transition-colors duration-300">Manage your events and budgets</p>
+              <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-2 transition-colors duration-300">Approved Events</h2>
+              <p className="text-[var(--text-secondary)] transition-colors duration-300">Manage your approved events and budgets</p>
             </div>
           </div>
           <div className="bg-[var(--card)] rounded-xl shadow-sm border-2 border-[var(--border)] p-12 text-center transition-colors duration-300">
@@ -123,12 +124,12 @@ export default function EventsPage() {
 
   return (
     <DashboardLayout>
-      <div>
-        <div className="flex justify-between items-center mb-8">
           <div>
-            <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-2 transition-colors duration-300">Events</h2>
-            <p className="text-[var(--text-secondary)] transition-colors duration-300">Manage your events and budgets</p>
-          </div>
+            <div className="flex justify-between items-center mb-8">
+              <div>
+                <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-2 transition-colors duration-300">Approved Events</h2>
+                <p className="text-[var(--text-secondary)] transition-colors duration-300">Manage your approved events and budgets</p>
+              </div>
           <Link
             href="/dashboard/events/create"
             prefetch={false}

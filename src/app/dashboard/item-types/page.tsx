@@ -64,7 +64,7 @@ export default function ItemTypesPage() {
         <div>
           <div className="flex justify-between items-center mb-8">
             <div>
-              <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-2 transition-colors duration-300">Menu Items</h2>
+              <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-2 transition-colors duration-300">Menus</h2>
               <p className="text-[var(--text-secondary)] transition-colors duration-300">Organize items into types (APPETIZERS, SALAD, etc.)</p>
             </div>
           </div>
@@ -87,14 +87,14 @@ export default function ItemTypesPage() {
       <div>
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-2 transition-colors duration-300">Menu Items</h2>
+            <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-2 transition-colors duration-300">Menus</h2>
             <p className="text-[var(--text-secondary)] transition-colors duration-300">Organize items into types (APPETIZERS, SALAD, etc.)</p>
           </div>
           <Link
             href="/dashboard/item-types/create"
             className="px-6 py-3 bg-[var(--border)] text-[var(--background)] rounded-lg font-medium hover:bg-[var(--primary-dark)] transition-colors duration-200 border-2 border-[var(--border)]"
           >
-            Add Menu Item
+            Add Menu
           </Link>
         </div>
 
@@ -105,7 +105,7 @@ export default function ItemTypesPage() {
               href="/dashboard/item-types/create"
               className="px-6 py-3 bg-[var(--border)] text-[var(--background)] rounded-lg font-medium hover:bg-[var(--primary-dark)] transition-colors duration-200 inline-block border-2 border-[var(--border)]"
             >
-              Add Menu Item
+              Add Menu
             </Link>
           </div>
         ) : (

@@ -21,6 +21,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     subItems: 0,
     events: 0,
     timeSlots: 0,
+    pendingEvents: 0,
   });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -58,16 +59,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const loadStats = async () => {
     if (!user || user.user_type !== "manager") {
-      setStats({ cuisines: 0, itemTypes: 0, subItems: 0, events: 0, timeSlots: 0 });
+      setStats({ cuisines: 0, itemTypes: 0, subItems: 0, events: 0, timeSlots: 0, pendingEvents: 0 });
       return;
     }
     try {
-      const [cuisines, itemTypes, subItems, events, timeSlots] = await Promise.all([
+      const [cuisines, itemTypes, subItems, events, timeSlots, pendingEvents] = await Promise.all([
         apiClient.getCuisines(),
         apiClient.getItemTypes(),
         apiClient.getSubItems(),
         apiClient.getEvents(),
         apiClient.getTimeSlots(),
+        apiClient.getPendingEvents(),
       ]);
       setStats({
         cuisines: Array.isArray(cuisines) ? cuisines.length : 0,
@@ -75,10 +77,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         subItems: Array.isArray(subItems) ? subItems.length : 0,
         events: Array.isArray(events) ? events.length : 0,
         timeSlots: Array.isArray(timeSlots) ? timeSlots.length : 0,
+        pendingEvents: Array.isArray(pendingEvents) ? pendingEvents.length : 0,
       });
     } catch (error) {
       console.error("Failed to load stats:", error);
-      setStats({ cuisines: 0, itemTypes: 0, subItems: 0, events: 0, timeSlots: 0 });
+      setStats({ cuisines: 0, itemTypes: 0, subItems: 0, events: 0, timeSlots: 0, pendingEvents: 0 });
     }
   };
 

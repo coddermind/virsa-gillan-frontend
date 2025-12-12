@@ -15,6 +15,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Code,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 interface DashboardSidebarProps {
@@ -24,6 +26,7 @@ interface DashboardSidebarProps {
     subItems: number;
     events: number;
     timeSlots: number;
+    pendingEvents?: number;
   };
 }
 
@@ -49,76 +52,70 @@ export default function DashboardSidebar({ stats }: DashboardSidebarProps) {
     window.dispatchEvent(new Event("sidebarToggle"));
   };
 
-  const navItems = [
+  const groupedNav = [
     {
-      href: "/dashboard",
-      label: "Dashboard",
-      icon: LayoutDashboard,
-      count: null,
-    },
-    {
-      href: "/dashboard/cuisines",
-      label: "Cuisines",
+      label: "Cuisine Management",
       icon: UtensilsCrossed,
-      count: stats?.cuisines,
-      color: "indigo",
+      key: "cuisine",
+      children: [
+        { href: "/dashboard/cuisines", label: "Cuisines", icon: UtensilsCrossed, count: stats?.cuisines, color: "indigo" },
+        { href: "/dashboard/item-types", label: "Menus", icon: FileText, count: stats?.itemTypes, color: "purple" },
+        { href: "/dashboard/sub-items", label: "Menu Items", icon: Menu, count: stats?.subItems, color: "pink" },
+      ],
     },
     {
-      href: "/dashboard/item-types",
-      label: "Menu Items",
-      icon: FileText,
-      count: stats?.itemTypes,
-      color: "purple",
-    },
-    {
-      href: "/dashboard/sub-items",
-      label: "Menues",
-      icon: Menu,
-      count: stats?.subItems,
-      color: "pink",
-    },
-    {
-      href: "/dashboard/time-slots",
-      label: "Time Slots",
-      icon: Clock,
-      count: stats?.timeSlots,
-      color: "orange",
-    },
-    {
-      href: "/dashboard/events",
-      label: "Events",
+      label: "Event Management",
       icon: Calendar,
-      count: stats?.events,
-      color: "blue",
+      key: "events",
+      children: [
+        { href: "/dashboard/events", label: "Approved Events", icon: Calendar, count: stats?.events, color: "blue" },
+        { href: "/dashboard/events/pending", label: "Pending Events", icon: Clock, count: stats?.pendingEvents, color: "yellow" },
+      ],
     },
     {
-      href: "/dashboard/events/pending",
-      label: "Pending Approvals",
-      icon: Clock,
-      count: null,
-      color: "yellow",
-    },
-    {
-      href: "/dashboard/calendar",
-      label: "Calendar",
+      label: "Calendar Management",
       icon: CalendarDays,
-      count: null,
-      color: "green",
-    },
-    {
-      href: "/dashboard/embed",
-      label: "Embed Code",
-      icon: Code,
-      count: null,
-      color: "indigo",
+      key: "calendar",
+      children: [
+        { href: "/dashboard/time-slots", label: "Time Slots", icon: Clock, count: stats?.timeSlots, color: "orange" },
+        { href: "/dashboard/calendar", label: "Calendar", icon: CalendarDays, count: null, color: "green" },
+        { href: "/dashboard/embed", label: "Embed Code", icon: Code, count: null, color: "indigo" },
+      ],
     },
   ];
 
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    cuisine: false,
+    events: false,
+    calendar: false,
+  });
+
+  const normalizePath = (path: string) => (path !== "/" ? path.replace(/\/+$/, "") : "/");
+  const current = normalizePath(pathname);
+
   const isActive = (href: string) => {
-    if (href === "/dashboard") {
-      return pathname === "/dashboard";
-    }
-    return pathname.startsWith(href);
+    const target = normalizePath(href);
+    return current === target;
+  };
+
+  const isGroupActive = (children: { href: string }[]) => {
+    return children.some((child) => isActive(child.href));
+  };
+
+  // Auto-open the group containing the current route
+  useEffect(() => {
+    setOpenGroups((prev) => {
+      const updated = { ...prev };
+      groupedNav.forEach((group) => {
+        updated[group.key] = isGroupActive(group.children);
+      });
+      return updated;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  const toggleGroup = (key: string) => {
+    setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   return (
@@ -147,12 +144,33 @@ export default function DashboardSidebar({ stats }: DashboardSidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4">
-        <ul className="space-y-1 px-2">
-          {navItems.map((item) => {
-            const active = isActive(item.href);
-            const colorClasses = {
-              indigo: theme === "dark" 
-                ? "bg-[var(--hover-bg)] text-[var(--border)] border-2 border-[var(--border)]" 
+        <ul className="space-y-2 px-2">
+          <li>
+            <Link
+              href="/dashboard"
+              prefetch={false}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
+                isActive("/dashboard")
+                  ? theme === "dark"
+                    ? "bg-[var(--hover-bg)] text-[var(--border)] border-2 border-[var(--border)]"
+                    : "bg-yellow-50 text-yellow-800 border-2 border-[var(--border)]"
+                  : theme === "dark"
+                  ? "text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--border)] hover:border border-[var(--border)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-yellow-800 hover:border border-[var(--border)]"
+              }`}
+              title={isCollapsed ? "Dashboard" : undefined}
+            >
+              <LayoutDashboard className="flex-shrink-0" size={20} />
+              {!isCollapsed && <span className="flex-1 font-medium">Dashboard</span>}
+            </Link>
+          </li>
+
+          {groupedNav.map((group) => {
+            const groupActive = isGroupActive(group.children);
+            const open = openGroups[group.key];
+            const colorClasses = (color?: string) => ({
+              indigo: theme === "dark"
+                ? "bg-[var(--hover-bg)] text-[var(--border)] border-2 border-[var(--border)]"
                 : "bg-yellow-50 text-yellow-800 border-2 border-[var(--border)]",
               purple: theme === "dark"
                 ? "bg-[var(--hover-bg)] text-[var(--border)] border-2 border-[var(--border)]"
@@ -169,52 +187,81 @@ export default function DashboardSidebar({ stats }: DashboardSidebarProps) {
               orange: theme === "dark"
                 ? "bg-[var(--hover-bg)] text-[var(--border)] border-2 border-[var(--border)]"
                 : "bg-yellow-50 text-yellow-800 border-2 border-[var(--border)]",
-            };
+              yellow: theme === "dark"
+                ? "bg-[var(--hover-bg)] text-[var(--border)] border-2 border-[var(--border)]"
+                : "bg-yellow-50 text-yellow-800 border-2 border-[var(--border)]",
+            }[color || "indigo"]);
 
-            const IconComponent = item.icon;
-            
             return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  prefetch={false}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
-                    active
-                      ? item.color
-                        ? colorClasses[item.color as keyof typeof colorClasses]
-                        : theme === "dark"
+              <li key={group.key}>
+                <button
+                  onClick={() => toggleGroup(group.key)}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg transition-all duration-200 ${
+                    groupActive
+                      ? theme === "dark"
                         ? "bg-[var(--hover-bg)] text-[var(--border)] border-2 border-[var(--border)]"
                         : "bg-yellow-50 text-yellow-800 border-2 border-[var(--border)]"
                       : theme === "dark"
                       ? "text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--border)] hover:border border-[var(--border)]"
                       : "text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-yellow-800 hover:border border-[var(--border)]"
                   }`}
-                  title={isCollapsed ? item.label : undefined}
+                  title={isCollapsed ? group.label : undefined}
                 >
-                  <IconComponent 
-                    className="flex-shrink-0 transition-all duration-200"
-                    size={20}
-                    strokeWidth={active ? 2.5 : 2}
-                  />
+                  <group.icon className="flex-shrink-0" size={20} />
                   {!isCollapsed && (
                     <>
-                      <span className="flex-1 font-medium">{item.label}</span>
-                      {item.count !== null && item.count !== undefined && (
-                        <span
-                          className={`px-2 py-0.5 text-xs font-semibold rounded-full border border-[var(--border)] transition-colors duration-200 ${
-                            active
-                              ? "bg-[var(--border)] text-[var(--background)]"
-                              : theme === "dark"
-                              ? "bg-[var(--hover-bg)] text-[var(--border)]"
-                              : "bg-yellow-50 text-yellow-800"
-                          }`}
-                        >
-                          {item.count}
-                        </span>
-                      )}
+                      <span className="flex-1 font-semibold text-sm whitespace-nowrap overflow-hidden text-ellipsis" title={group.label}>
+                        {group.label}
+                      </span>
+                      {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </>
                   )}
-                </Link>
+                </button>
+
+                {!isCollapsed && open && (
+                  <ul className="mt-1 space-y-1 pl-3">
+                    {group.children.map((item) => {
+                      const active = isActive(item.href);
+                      const IconComponent = item.icon;
+                      const cls = active
+                        ? item.color
+                          ? colorClasses(item.color)
+                          : theme === "dark"
+                          ? "bg-[var(--hover-bg)] text-[var(--border)] border-2 border-[var(--border)]"
+                          : "bg-yellow-50 text-yellow-800 border-2 border-[var(--border)]"
+                        : theme === "dark"
+                        ? "text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--border)] hover:border border-[var(--border)]"
+                        : "text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-yellow-800 hover:border border-[var(--border)]";
+
+                      return (
+                        <li key={item.href}>
+                          <Link
+                            href={item.href}
+                            prefetch={false}
+                            className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 ${cls}`}
+                            title={item.label}
+                          >
+                            <IconComponent className="flex-shrink-0" size={18} strokeWidth={active ? 2.5 : 2} />
+                            <span className="flex-1 text-sm font-medium">{item.label}</span>
+                            {item.count !== null && item.count !== undefined && (
+                              <span
+                                className={`px-2 py-0.5 text-xs font-semibold rounded-full border border-[var(--border)] transition-colors duration-200 ${
+                                  active
+                                    ? "bg-[var(--border)] text-[var(--background)]"
+                                    : theme === "dark"
+                                    ? "bg-[var(--hover-bg)] text-[var(--border)]"
+                                    : "bg-yellow-50 text-yellow-800"
+                                }`}
+                              >
+                                {item.count}
+                              </span>
+                            )}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </li>
             );
           })}

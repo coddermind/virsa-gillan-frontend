@@ -20,11 +20,12 @@ interface SelectedMenu {
   price: string;
   cuisine_name: string;
   item_type_name: string;
+  item_type_id?: number;
 }
 
 function EmbedCalendarContent() {
   const searchParams = useSearchParams();
-  const userId = searchParams?.get("user_id") || null;
+  const embedToken = searchParams?.get("token") || null;
   
   const [mounted, setMounted] = useState(false);
   const [events, setEvents] = useState<Event[]>([]);
@@ -47,6 +48,7 @@ function EmbedCalendarContent() {
     number_of_persons: "1",
     selected_menus: [] as SelectedMenu[],
     extras: [] as { name: string }[],
+    cuisine: "",
   });
   const [availableTimeSlots, setAvailableTimeSlots] = useState<TimeSlot[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -57,31 +59,35 @@ function EmbedCalendarContent() {
     item_type: "",
     selected_menu_ids: [] as number[],
   });
+  // Track selections per menu type to preserve when switching chips
+  // Store both menu ID and menu data for easy retrieval
+  const [selectionsByMenuType, setSelectionsByMenuType] = useState<Record<number, { id: number; menu: SubItem }>>({});
   const [availableMenus, setAvailableMenus] = useState<SubItem[]>([]);
   const [loadingMenus, setLoadingMenus] = useState(false);
   const [extrasModalData, setExtrasModalData] = useState({
     name: "",
   });
+  const [calculatedMenuTotal, setCalculatedMenuTotal] = useState(0);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
-    if (userId) {
+    if (embedToken) {
       loadCalendarData();
     } else {
-      setError("Missing user_id parameter. Please use the embed code from your dashboard.");
+      setError("Missing token parameter. Please use the embed code from your dashboard.");
       setLoading(false);
     }
-  }, [userId]);
+  }, [embedToken]);
 
   const loadCalendarData = async () => {
-    if (!userId) return;
+    if (!embedToken) return;
     
     try {
       setLoading(true);
-      const data = await apiClient.getPublicCalendar(userId);
+      const data = await apiClient.getPublicCalendar(embedToken);
       setEvents(Array.isArray(data.events) ? data.events : []);
       setTimeSlots(Array.isArray(data.time_slots) ? data.time_slots : []);
       setCuisines(Array.isArray(data.cuisines) ? data.cuisines : []);
@@ -95,21 +101,56 @@ function EmbedCalendarContent() {
   };
 
   const loadMenusForModal = async () => {
-    if (!userId || !modalData.cuisine || !modalData.item_type) {
+    if (!embedToken || !bookingData.cuisine || !modalData.item_type) {
       setAvailableMenus([]);
       return;
     }
 
     setLoadingMenus(true);
     try {
-      const cuisineId = parseInt(modalData.cuisine);
+      const cuisineId = parseInt(bookingData.cuisine);
       const itemTypeId = parseInt(modalData.item_type);
-      const userIdNum = typeof userId === 'string' ? parseInt(userId) : userId;
-      if (isNaN(cuisineId) || isNaN(itemTypeId) || isNaN(userIdNum)) {
-        throw new Error("Invalid IDs provided");
-      }
-      const menus = await apiClient.getPublicMenus(userIdNum, cuisineId, itemTypeId);
+      const menus = await apiClient.getPublicMenus(embedToken, cuisineId, itemTypeId);
       setAvailableMenus(Array.isArray(menus) ? menus : []);
+
+      // Restore selection for this menu type from persistent state
+      const savedSelection = selectionsByMenuType[itemTypeId];
+      if (savedSelection) {
+        setModalData((prev) => ({
+          ...prev,
+          selected_menu_ids: [savedSelection.id],
+        }));
+      } else {
+        // Fallback to bookingData.selected_menus if not in persistent state
+        const existing = bookingData.selected_menus.find(
+          (m) => m.item_type_id === itemTypeId
+        );
+        if (existing) {
+          // Try to find the menu in availableMenus to get full data
+          const menuInList = menus.find((m) => m.id === existing.id);
+          if (menuInList) {
+            setModalData((prev) => ({
+              ...prev,
+              selected_menu_ids: [existing.id],
+            }));
+            // Also save to persistent state with full menu data
+            setSelectionsByMenuType((prev) => ({
+              ...prev,
+              [itemTypeId]: { id: existing.id, menu: menuInList },
+            }));
+          } else {
+            setModalData((prev) => ({
+              ...prev,
+              selected_menu_ids: [existing.id],
+            }));
+          }
+        } else {
+          setModalData((prev) => ({
+            ...prev,
+            selected_menu_ids: [],
+          }));
+        }
+      }
     } catch (err) {
       console.error("Failed to load menus:", err);
       setError(err instanceof Error ? err.message : "Failed to load menus");
@@ -120,31 +161,89 @@ function EmbedCalendarContent() {
   };
 
   useEffect(() => {
-    if (modalData.cuisine && modalData.item_type && userId) {
+    if (bookingData.cuisine && modalData.item_type && embedToken) {
       loadMenusForModal();
     } else {
       setAvailableMenus([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalData.cuisine, modalData.item_type, userId]);
+  }, [bookingData.cuisine, modalData.item_type, embedToken]);
+
+
+  // Calculate menu total with cuisine pricing override (matches manager portal)
+  useEffect(() => {
+    calculateMenuTotal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingData.selected_menus, bookingData.number_of_persons, cuisines, bookingData.cuisine]);
+
+  const calculateMenuTotal = () => {
+    if (!bookingData.selected_menus.length || !bookingData.number_of_persons) {
+      setCalculatedMenuTotal(0);
+      return;
+    }
+
+    const numberOfPersons = parseInt(bookingData.number_of_persons) || 1;
+
+    // If all menus share a cuisine and that cuisine has a price, use cuisine price per person
+    const firstMenu = bookingData.selected_menus[0];
+    if (firstMenu && firstMenu.cuisine_name) {
+      const cuisine = cuisines.find((c) => c.name === firstMenu.cuisine_name);
+      const allSameCuisine = bookingData.selected_menus.every((m) => m.cuisine_name === firstMenu.cuisine_name);
+
+      if (allSameCuisine && cuisine && cuisine.price) {
+        const cuisinePrice = parseFloat(String(cuisine.price)) || 0;
+        setCalculatedMenuTotal(cuisinePrice * numberOfPersons);
+        return;
+      }
+    }
+
+    // Otherwise, sum individual menu prices per person
+    let total = 0;
+    bookingData.selected_menus.forEach((menu) => {
+      if (menu.price) {
+        total += parseFloat(menu.price) * numberOfPersons;
+      }
+    });
+
+    setCalculatedMenuTotal(total);
+  };
 
   const openMenuModal = (e?: React.MouseEvent) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-    setModalData({
-      cuisine: "",
-      item_type: "",
-      selected_menu_ids: [],
-    });
+    if (!bookingData.cuisine) {
+      setError("Please select a cuisine first.");
+      return;
+    }
+    // Find first menu type with a selection (from persistent state or bookingData)
+    let firstItemType = "";
+    let firstSelection: number | undefined = undefined;
+    
+    for (const itemType of itemTypes) {
+      const savedSelection = selectionsByMenuType[itemType.id];
+      const existing = bookingData.selected_menus.find((m) => m.item_type_id === itemType.id);
+      if (savedSelection || existing) {
+        firstItemType = String(itemType.id);
+        firstSelection = savedSelection?.id || existing?.id;
+        break;
+      }
+    }
+    
+    setModalData((prev) => ({
+      ...prev,
+      cuisine: bookingData.cuisine,
+      item_type: firstItemType,
+      selected_menu_ids: firstSelection ? [firstSelection] : [],
+    }));
     setShowMenuModal(true);
   };
 
   const closeMenuModal = () => {
     setShowMenuModal(false);
     setModalData({
-      cuisine: "",
+      cuisine: bookingData.cuisine || "",
       item_type: "",
       selected_menu_ids: [],
     });
@@ -152,37 +251,87 @@ function EmbedCalendarContent() {
   };
 
   const toggleMenuInModal = (menuId: number) => {
-    setModalData((prev) => {
-      const currentSelection = prev.selected_menu_ids;
-      if (currentSelection.includes(menuId)) {
-        return { ...prev, selected_menu_ids: currentSelection.filter((id) => id !== menuId) };
-      } else {
-        return { ...prev, selected_menu_ids: [...currentSelection, menuId] };
-      }
-    });
+    const itemTypeId = parseInt(modalData.item_type);
+    const menu = availableMenus.find((m) => m.id === menuId);
+    if (!menu) return;
+    
+    // Single selection per menu type
+    setModalData((prev) => ({
+      ...prev,
+      selected_menu_ids: [menuId],
+    }));
+    // Save to persistent state for this menu type with full menu data
+    setSelectionsByMenuType((prev) => ({
+      ...prev,
+      [itemTypeId]: { id: menuId, menu },
+    }));
   };
 
   const addMenusFromModal = () => {
-    if (modalData.selected_menu_ids.length === 0) {
+    // Check if there are any selections in persistent state
+    const hasAnySelections = Object.keys(selectionsByMenuType).length > 0;
+    if (!hasAnySelections && modalData.selected_menu_ids.length === 0) {
       setError("Please select at least one menu.");
       return;
     }
 
-    const newMenus: SelectedMenu[] = modalData.selected_menu_ids.map((menuId) => {
-      const menu = availableMenus.find((m) => m.id === menuId);
+    // Add all selections from all chips
+    const newMenus: SelectedMenu[] = [];
+    let firstCuisineId: string | null = null;
+    
+    // Check if there are existing menus and get their cuisine ID
+    const existingCuisineId = bookingData.selected_menus.length > 0 
+      ? (() => {
+          // Find the cuisine ID from the first existing menu's cuisine_name
+          const firstMenu = bookingData.selected_menus[0];
+          const cuisine = cuisines.find(c => c.name === firstMenu.cuisine_name);
+          return cuisine ? String(cuisine.id) : null;
+        })()
+      : null;
+    
+    // Process all selections from persistent state
+    for (const [itemTypeIdStr, selection] of Object.entries(selectionsByMenuType)) {
+      const itemTypeId = parseInt(itemTypeIdStr);
+      const menu = selection.menu;
+      const menuCuisineId = String(menu.cuisine);
+      
+      // Enforce single cuisine selection to align with cuisine pricing
+      if (!firstCuisineId) {
+        firstCuisineId = menuCuisineId;
+      } else if (firstCuisineId !== menuCuisineId) {
+        setError("You can only add menus from one cuisine per booking. Please ensure all selected menus belong to the same cuisine.");
+        return;
+      }
+      
+      // Check against existing menus if any
+      if (existingCuisineId && menuCuisineId !== existingCuisineId) {
+        setError("You can only add menus from one cuisine per booking. Please remove existing menus or choose the same cuisine.");
+        return;
+      }
+      
+      const newMenu: SelectedMenu = {
+        id: menu.id,
+        name: menu.name,
+        price: menu.price || "0.00",
+        cuisine_name: menu.cuisine_name,
+        item_type_name: menu.item_type_name,
+        item_type_id: menu.item_type ?? itemTypeId,
+      };
+      newMenus.push(newMenu);
+    }
+
+    setBookingData((prev) => {
+      let filtered = prev.selected_menus;
+      // Remove all menus that match any of the new menu types
+      newMenus.forEach((newMenu) => {
+        filtered = filtered.filter((m) => m.item_type_id !== newMenu.item_type_id);
+      });
       return {
-        id: menu!.id,
-        name: menu!.name,
-        price: menu!.price || "0.00",
-        cuisine_name: menu!.cuisine_name,
-        item_type_name: menu!.item_type_name,
+        ...prev,
+        selected_menus: [...filtered, ...newMenus],
+        cuisine: prev.cuisine || bookingData.cuisine,
       };
     });
-
-    setBookingData((prev) => ({
-      ...prev,
-      selected_menus: [...prev.selected_menus, ...newMenus],
-    }));
 
     closeMenuModal();
   };
@@ -191,6 +340,8 @@ function EmbedCalendarContent() {
     setBookingData((prev) => ({
       ...prev,
       selected_menus: prev.selected_menus.filter((m) => m.id !== menuId),
+      // If no menus left, clear cuisine to allow a different cuisine selection next time
+      cuisine: prev.selected_menus.filter((m) => m.id !== menuId).length === 0 ? "" : prev.cuisine,
     }));
   };
 
@@ -336,7 +487,8 @@ function EmbedCalendarContent() {
         selected_menus: bookingData.selected_menus.map(m => m.id),
         extras: extrasWithCharges,
         additional_charges: 0, // Public users cannot set service charges
-        user_id: userId ? parseInt(userId) : undefined,
+        cuisine: bookingData.cuisine ? parseInt(bookingData.cuisine) : undefined,
+        embed_token: embedToken || undefined,
       };
 
       console.log("Submitting booking:", bookingPayload);
@@ -356,6 +508,7 @@ function EmbedCalendarContent() {
         number_of_persons: "1",
         selected_menus: [],
         extras: [],
+        cuisine: "",
       });
       loadCalendarData();
     } catch (err: any) {
@@ -371,7 +524,7 @@ function EmbedCalendarContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="h-full min-h-0 flex items-center justify-center bg-white">
         <div className="text-center">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-yellow-500 border-r-transparent"></div>
           <p className="mt-4 text-gray-600">Loading calendar...</p>
@@ -381,9 +534,9 @@ function EmbedCalendarContent() {
   }
 
   return (
-    <div className="min-h-screen bg-white p-4">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6 text-center">Book Your Event</h1>
+    <div className="h-full min-h-0 bg-white p-3" style={{ width: "100%", height: "100%" }}>
+      <div className="w-full max-w-3xl mx-auto h-full">
+        <h1 className="text-2xl font-bold text-gray-900 mb-4 text-center">Book Your Event</h1>
         
         {error && (
           <div className="mb-4 p-4 bg-red-50 border-2 border-red-500 rounded-lg text-red-700">
@@ -391,28 +544,28 @@ function EmbedCalendarContent() {
           </div>
         )}
 
-        <div className="bg-white rounded-lg border-2 border-yellow-500 shadow-lg p-6 mb-6">
-          <div className="flex justify-between items-center mb-4">
+        <div className="bg-white rounded-lg border border-yellow-400 shadow-md p-4 mb-5">
+          <div className="flex justify-between items-center mb-3">
             <button
               onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
-              className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors"
+              className="px-3 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm"
             >
               ← Prev
             </button>
-            <h2 className="text-xl font-bold text-gray-900">
+            <h2 className="text-lg font-bold text-gray-900">
               {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
             </h2>
             <button
               onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
-              className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors"
+              className="px-3 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm"
             >
               Next →
             </button>
           </div>
 
-          <div className="grid grid-cols-7 gap-2">
+          <div className="grid grid-cols-7 gap-1.5">
             {dayNames.map((day) => (
-              <div key={day} className="text-center font-semibold text-gray-700 py-2">
+              <div key={day} className="text-center font-semibold text-gray-700 py-1.5 text-sm">
                 {day}
               </div>
             ))}
@@ -427,13 +580,13 @@ function EmbedCalendarContent() {
                 <button
                   key={date.toISOString()}
                   onClick={() => handleDateClick(date)}
-                  className={`aspect-square rounded-lg border-2 transition-all duration-200 ${
+                  className={`aspect-square rounded-md border transition-all duration-200 text-sm ${
                     status === "fully-booked"
-                      ? "bg-red-500/20 border-red-500 text-red-700 cursor-not-allowed"
+                      ? "bg-red-500/15 border-red-400 text-red-700 cursor-not-allowed"
                       : status === "partially-booked"
-                      ? "bg-yellow-500/20 border-yellow-500 text-yellow-700 hover:bg-yellow-500/30"
-                      : "bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100"
-                  } ${isToday ? "ring-2 ring-yellow-500" : ""}`}
+                      ? "bg-yellow-500/15 border-yellow-400 text-yellow-700 hover:bg-yellow-500/25"
+                      : "bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100"
+                  } ${isToday ? "ring-2 ring-yellow-400" : ""}`}
                   disabled={status === "fully-booked"}
                 >
                   <div className="text-sm font-semibold">{date.getDate()}</div>
@@ -442,17 +595,17 @@ function EmbedCalendarContent() {
             })}
           </div>
 
-          <div className="mt-4 flex gap-4 justify-center text-sm">
+          <div className="mt-3 flex gap-3 justify-center text-xs">
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-gray-50 border-2 border-gray-300 rounded"></div>
+              <div className="w-3.5 h-3.5 bg-gray-50 border border-gray-300 rounded"></div>
               <span className="text-gray-700">Available</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-yellow-500/20 border-2 border-yellow-500 rounded"></div>
+              <div className="w-3.5 h-3.5 bg-yellow-500/15 border border-yellow-400 rounded"></div>
               <span className="text-gray-700">Partially Booked</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-red-500/20 border-2 border-red-500 rounded"></div>
+              <div className="w-3.5 h-3.5 bg-red-500/15 border border-red-400 rounded"></div>
               <span className="text-gray-700">Fully Booked</span>
             </div>
           </div>
@@ -461,7 +614,7 @@ function EmbedCalendarContent() {
         {/* Booking Modal (Popup) */}
         {showBookingForm && (
           <div 
-            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" 
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3" 
             style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
             onClick={() => {
               setShowBookingForm(false);
@@ -469,30 +622,30 @@ function EmbedCalendarContent() {
             }}
           >
             <div 
-              className="bg-white rounded-xl shadow-lg border-2 border-yellow-500 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-white rounded-lg shadow-lg border border-yellow-500 p-4 max-w-xl w-full max-h-[90vh] overflow-y-auto"
               style={{ position: 'relative', zIndex: 10000 }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-2xl font-bold text-gray-900">Book Event</h3>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold text-gray-900">Book Event</h3>
                 <button
                   onClick={() => {
                     setShowBookingForm(false);
                     setSelectedDate(null);
                   }}
-                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                  className="text-gray-500 hover:text-gray-700 text-xl font-bold"
                 >
                   ×
                 </button>
               </div>
 
-            <form onSubmit={handleBookingSubmit} className="space-y-4">
+              <form onSubmit={handleBookingSubmit} className="space-y-3">
                 {error && (
                   <div className="mb-4 p-4 bg-red-50 border-2 border-red-500 rounded-lg text-red-700 text-sm">
                     {error}
                   </div>
                 )}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Your Name *</label>
                     <input
@@ -580,43 +733,92 @@ function EmbedCalendarContent() {
 
                 {/* Menus Section */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Menus *</label>
-                  {bookingData.selected_menus.length > 0 && (
-                    <div className="mb-3 space-y-2">
-                      {bookingData.selected_menus.map((menu) => (
-                        <div
-                          key={menu.id}
-                          className="flex items-center justify-between p-3 bg-gray-50 border-2 border-gray-300 rounded-lg"
-                        >
-                          <div className="flex-1">
-                            <div className="font-semibold text-gray-900">{menu.name}</div>
-                            <div className="text-sm text-gray-600">
-                              {menu.cuisine_name} • {menu.item_type_name} • ${menu.price} per person
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeMenu(menu.id)}
-                            className="ml-4 px-3 py-1 text-sm bg-red-500/20 text-red-600 rounded hover:bg-red-500/30 transition-colors border border-red-500"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      openMenuModal();
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Cuisine *</label>
+                  <select
+                    value={bookingData.cuisine}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setBookingData((prev) => ({
+                        ...prev,
+                        cuisine: value,
+                        selected_menus: [],
+                      }));
+                      setModalData({
+                        cuisine: value,
+                        item_type: "",
+                        selected_menu_ids: [],
+                      });
                     }}
-                    className="w-full p-4 border-2 border-dashed border-gray-400 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                    required
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
                   >
-                    <Plus className="w-5 h-5" />
-                    <span className="font-medium">Add Menu</span>
-                  </button>
+                    <option value="">Select Cuisine</option>
+                    {cuisines.map((cuisine) => (
+                      <option key={cuisine.id} value={cuisine.id}>
+                        {cuisine.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Menu Item *</label>
+                    {bookingData.selected_menus.length > 0 && (
+                      <div className="mb-3 space-y-2">
+                        {bookingData.selected_menus.map((menu) => (
+                          <div
+                            key={menu.id}
+                            className="flex items-center justify-between p-3 bg-gray-50 border-2 border-gray-300 rounded-lg"
+                          >
+                            <div className="flex-1">
+                              <div className="font-semibold text-gray-900">{menu.name}</div>
+                              <div className="text-sm text-gray-600">
+                                {menu.cuisine_name} • {menu.item_type_name}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeMenu(menu.id)}
+                              className="ml-4 px-3 py-1 text-sm bg-red-500/20 text-red-600 rounded hover:bg-red-500/30 transition-colors border border-red-500"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openMenuModal();
+                      }}
+                      disabled={!bookingData.cuisine}
+                      className="w-full p-4 border-2 border-dashed border-gray-400 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Plus className="w-5 h-5" />
+                      <span className="font-medium">Add Menu Item</span>
+                    </button>
+
+                    {bookingData.selected_menus.length > 0 && (
+                      <div className="mt-3 p-4 bg-yellow-50 border-2 border-yellow-500 rounded-lg">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="text-sm text-yellow-800 mb-1">Menu Total (real-time)</p>
+                            <p className="text-2xl font-bold text-yellow-700">
+                              ${calculatedMenuTotal.toFixed(2)}
+                            </p>
+                            <p className="text-xs text-yellow-800 mt-1">
+                              {bookingData.selected_menus.length} menu(s) × {bookingData.number_of_persons} person(s)
+                            </p>
+                          </div>
+                          <div className="text-xs text-yellow-800 text-right">
+                            If this cuisine has a price, it overrides individual menu prices.
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Extras Section */}
@@ -720,45 +922,51 @@ function EmbedCalendarContent() {
               </div>
 
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Cuisine *</label>
-                  <select
-                    value={modalData.cuisine}
-                    onChange={(e) => setModalData({ ...modalData, cuisine: e.target.value, item_type: "", selected_menu_ids: [] })}
-                    required
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
-                  >
-                    <option value="">Select Cuisine</option>
-                    {cuisines.map((cuisine) => (
-                      <option key={cuisine.id} value={cuisine.id}>
-                        {cuisine.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="text-sm text-gray-700">
+                  <span className="font-semibold">Cuisine:</span>{" "}
+                  {bookingData.cuisine
+                    ? cuisines.find((c) => String(c.id) === bookingData.cuisine)?.name || "Selected"
+                    : "None selected"}
                 </div>
 
-                {modalData.cuisine && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Menu Item Type *</label>
-                    <select
-                      value={modalData.item_type}
-                      onChange={(e) => setModalData({ ...modalData, item_type: e.target.value, selected_menu_ids: [] })}
-                      required
-                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
-                    >
-                      <option value="">Select Menu Item Type</option>
-                      {itemTypes.map((itemType) => (
-                        <option key={itemType.id} value={itemType.id}>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Menus</label>
+                  <div className="flex flex-wrap gap-2">
+                    {itemTypes.map((itemType) => {
+                      const active = modalData.item_type === String(itemType.id);
+                      // Check persistent state first, then fallback to bookingData
+                      const savedSelection = selectionsByMenuType[itemType.id];
+                      const existing = bookingData.selected_menus.find((m) => m.item_type_id === itemType.id);
+                      const selectionId = savedSelection?.id || existing?.id;
+                      return (
+                        <button
+                          key={itemType.id}
+                          type="button"
+                          onClick={() => {
+                            const newItemType = String(itemType.id);
+                            setModalData({
+                              ...modalData,
+                              item_type: newItemType,
+                              selected_menu_ids: selectionId ? [selectionId] : [],
+                            });
+                          }}
+                          disabled={!bookingData.cuisine}
+                          className={`px-3 py-2 rounded-full border text-sm ${
+                            active
+                              ? "bg-yellow-500 text-white border-yellow-500"
+                              : "bg-white border-gray-400 text-gray-900 hover:bg-yellow-50 hover:border-yellow-400"
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        >
                           {itemType.name}
-                        </option>
-                      ))}
-                    </select>
+                        </button>
+                      );
+                    })}
                   </div>
-                )}
+                </div>
 
-                {modalData.cuisine && modalData.item_type && (
+                {bookingData.cuisine && modalData.item_type && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Available Menus</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Available Menu Items (single selection)</label>
                     {loadingMenus ? (
                       <div className="p-4 text-center text-gray-600">Loading menus...</div>
                     ) : availableMenus.length === 0 ? (
@@ -780,7 +988,7 @@ function EmbedCalendarContent() {
                           >
                             <div className="font-semibold">{menu.name}</div>
                             <div className={`text-sm ${modalData.selected_menu_ids.includes(menu.id) ? "text-white opacity-95" : "text-gray-700"}`}>
-                              ${menu.price || "0.00"} per person
+                              {menu.cuisine_name} • {menu.item_type_name}
                             </div>
                           </button>
                         ))}
@@ -793,9 +1001,10 @@ function EmbedCalendarContent() {
                   <button
                     type="button"
                     onClick={addMenusFromModal}
-                    className="px-6 py-3 bg-yellow-500 text-white rounded-lg font-medium hover:bg-yellow-600 transition-colors"
+                    disabled={Object.keys(selectionsByMenuType).length === 0}
+                    className="px-6 py-3 bg-yellow-500 text-white rounded-lg font-medium hover:bg-yellow-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Add Selected Menus
+                    Add Menu Item
                   </button>
                   <button
                     type="button"

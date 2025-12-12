@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -14,9 +14,10 @@ interface SelectedMenu {
   price: string;
   cuisine_name: string;
   item_type_name: string;
+  item_type_id?: number;
 }
 
-export default function CreateEventPage() {
+function CreateEventPageContent() {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -31,6 +32,7 @@ export default function CreateEventPage() {
     date: urlDate,
     time_slot: urlTimeSlot,
     number_of_persons: "1",
+    cuisine: "",
     selected_menus: [] as SelectedMenu[],
     extras: [] as { name: string; charges: number }[],
     service_charges: "0",
@@ -52,6 +54,9 @@ export default function CreateEventPage() {
     item_type: "",
     selected_menu_ids: [] as number[],
   });
+  // Track selections per menu type to preserve when switching chips
+  // Store both menu ID and menu data for easy retrieval
+  const [selectionsByMenuType, setSelectionsByMenuType] = useState<Record<number, { id: number; menu: SubItem }>>({});
   const [extrasModalData, setExtrasModalData] = useState({
     name: "",
     charges: "",
@@ -138,14 +143,27 @@ export default function CreateEventPage() {
     }
   }, [formData.date, user]);
 
-  // Load menus when modal cuisine and item_type change
+  // Load menus when cuisine and item_type change
   useEffect(() => {
-    if (modalData.cuisine && modalData.item_type) {
+    if (formData.cuisine && modalData.item_type) {
       loadMenusForModal();
     } else {
       setAvailableMenus([]);
     }
-  }, [modalData.cuisine, modalData.item_type]);
+  }, [formData.cuisine, modalData.item_type]);
+
+  // When switching menu-type chips, restore previously selected item for that type
+  useEffect(() => {
+    if (!modalData.item_type) return;
+    const itemTypeId = parseInt(modalData.item_type);
+    const existing = formData.selected_menus.find((m) => m.item_type_id === itemTypeId);
+    if (existing && !modalData.selected_menu_ids.includes(existing.id)) {
+      setModalData((prev) => ({
+        ...prev,
+        selected_menu_ids: [existing.id],
+      }));
+    }
+  }, [modalData.item_type, formData.selected_menus]);
 
   // Calculate menu total when selected menus, number of persons, or cuisines change
   useEffect(() => {
@@ -195,17 +213,56 @@ export default function CreateEventPage() {
   };
 
   const loadMenusForModal = async () => {
-    if (!modalData.cuisine || !modalData.item_type) {
+    if (!formData.cuisine || !modalData.item_type) {
       setAvailableMenus([]);
       return;
     }
 
     setLoadingMenus(true);
     try {
-      const cuisineId = parseInt(modalData.cuisine);
+      const cuisineId = parseInt(formData.cuisine);
       const itemTypeId = parseInt(modalData.item_type);
       const menus = await apiClient.getSubItems(cuisineId, itemTypeId);
       setAvailableMenus(Array.isArray(menus) ? menus : []);
+
+      // Restore selection for this menu type from persistent state
+      const savedSelection = selectionsByMenuType[itemTypeId];
+      if (savedSelection) {
+        setModalData((prev) => ({
+          ...prev,
+          selected_menu_ids: [savedSelection.id],
+        }));
+      } else {
+        // Fallback to formData.selected_menus if not in persistent state
+        const existing = formData.selected_menus.find(
+          (m) => m.item_type_id === itemTypeId
+        );
+        if (existing) {
+          // Try to find the menu in availableMenus to get full data
+          const menuInList = menus.find((m) => m.id === existing.id);
+          if (menuInList) {
+            setModalData((prev) => ({
+              ...prev,
+              selected_menu_ids: [existing.id],
+            }));
+            // Also save to persistent state with full menu data
+            setSelectionsByMenuType((prev) => ({
+              ...prev,
+              [itemTypeId]: { id: existing.id, menu: menuInList },
+            }));
+          } else {
+            setModalData((prev) => ({
+              ...prev,
+              selected_menu_ids: [existing.id],
+            }));
+          }
+        } else {
+          setModalData((prev) => ({
+            ...prev,
+            selected_menu_ids: [],
+          }));
+        }
+      }
     } catch (err) {
       console.error("Failed to load menus:", err);
       setAvailableMenus([]);
@@ -253,18 +310,37 @@ export default function CreateEventPage() {
       e.preventDefault();
       e.stopPropagation();
     }
-    setModalData({
-      cuisine: "",
-      item_type: "",
-      selected_menu_ids: [],
-    });
+    if (!formData.cuisine) {
+      setError("Please select a Cuisine first.");
+      return;
+    }
+    // Find first menu type with a selection (from persistent state or formData)
+    let firstItemType = "";
+    let firstSelection: number | undefined = undefined;
+    
+    for (const itemType of itemTypes) {
+      const savedSelection = selectionsByMenuType[itemType.id];
+      const existing = formData.selected_menus.find((m) => m.item_type_id === itemType.id);
+      if (savedSelection || existing) {
+        firstItemType = String(itemType.id);
+        firstSelection = savedSelection?.id || existing?.id;
+        break;
+      }
+    }
+    
+    setModalData((prev) => ({
+      ...prev,
+      cuisine: formData.cuisine,
+      item_type: firstItemType,
+      selected_menu_ids: firstSelection ? [firstSelection] : [],
+    }));
     setShowMenuModal(true);
   };
 
   const closeMenuModal = () => {
     setShowMenuModal(false);
     setModalData({
-      cuisine: "",
+      cuisine: formData.cuisine || "",
       item_type: "",
       selected_menu_ids: [],
     });
@@ -272,37 +348,61 @@ export default function CreateEventPage() {
   };
 
   const toggleMenuInModal = (menuId: number) => {
-    setModalData((prev) => {
-      const currentSelection = prev.selected_menu_ids;
-      if (currentSelection.includes(menuId)) {
-        return { ...prev, selected_menu_ids: currentSelection.filter((id) => id !== menuId) };
-      } else {
-        return { ...prev, selected_menu_ids: [...currentSelection, menuId] };
-      }
-    });
+    const itemTypeId = parseInt(modalData.item_type);
+    const menu = availableMenus.find((m) => m.id === menuId);
+    if (!menu) return;
+    
+    // Single selection per open modal (per menu type)
+    setModalData((prev) => ({
+      ...prev,
+      selected_menu_ids: [menuId],
+    }));
+    // Save to persistent state for this menu type with full menu data
+    setSelectionsByMenuType((prev) => ({
+      ...prev,
+      [itemTypeId]: { id: menuId, menu },
+    }));
   };
 
   const addMenusFromModal = () => {
-    if (modalData.selected_menu_ids.length === 0) {
+    // Check if there are any selections in persistent state
+    const hasAnySelections = Object.keys(selectionsByMenuType).length > 0;
+    if (!hasAnySelections && modalData.selected_menu_ids.length === 0) {
       setError("Please select at least one menu.");
       return;
     }
 
-    const newMenus: SelectedMenu[] = modalData.selected_menu_ids.map((menuId) => {
-      const menu = availableMenus.find((m) => m.id === menuId);
+    // Add all selections from all chips
+    const newMenus: SelectedMenu[] = [];
+    
+    // Process all selections from persistent state
+    for (const [itemTypeIdStr, selection] of Object.entries(selectionsByMenuType)) {
+      const itemTypeId = parseInt(itemTypeIdStr);
+      const menu = selection.menu;
+      
+      const newMenu: SelectedMenu = {
+        id: menu.id,
+        name: menu.name,
+        price: menu.price || "0.00",
+        cuisine_name: menu.cuisine_name,
+        item_type_name: menu.item_type_name,
+        item_type_id: menu.item_type ?? itemTypeId,
+      };
+      newMenus.push(newMenu);
+    }
+
+    // Enforce one selection per menu type; replace any existing with same item_type_id
+    setFormData((prev) => {
+      let filtered = prev.selected_menus;
+      // Remove all menus that match any of the new menu types
+      newMenus.forEach((newMenu) => {
+        filtered = filtered.filter((m) => m.item_type_id !== newMenu.item_type_id);
+      });
       return {
-        id: menu!.id,
-        name: menu!.name,
-        price: menu!.price || "0.00",
-        cuisine_name: menu!.cuisine_name,
-        item_type_name: menu!.item_type_name,
+        ...prev,
+        selected_menus: [...filtered, ...newMenus],
       };
     });
-
-    setFormData((prev) => ({
-      ...prev,
-      selected_menus: [...prev.selected_menus, ...newMenus],
-    }));
 
     closeMenuModal();
   };
@@ -631,44 +731,76 @@ export default function CreateEventPage() {
                 {/* Menus Column */}
                 <div>
                   <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
-                    Menus *
+                    Cuisine *
                   </label>
-                  {formData.selected_menus.length > 0 && (
-                    <div className="mb-3 space-y-2">
-                      {formData.selected_menus.map((menu) => (
-                        <div
-                          key={menu.id}
-                          className="flex items-center justify-between p-3 bg-[var(--hover-bg)] border-2 border-[var(--border)] rounded-lg"
-                        >
-                          <div className="flex-1">
-                            <div className="font-semibold text-[var(--text-primary)]">{menu.name}</div>
-                            <div className="text-sm text-[var(--text-secondary)]">
-                              {menu.cuisine_name} • {menu.item_type_name} • ${menu.price} per person
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeMenu(menu.id)}
-                            className="ml-4 px-3 py-1 text-sm bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors duration-200 border border-red-500"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      openMenuModal();
+                  <select
+                    value={formData.cuisine}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData((prev) => ({
+                        ...prev,
+                        cuisine: value,
+                        selected_menus: [], // reset menus when cuisine changes
+                      }));
+                      setModalData({
+                        cuisine: value,
+                        item_type: "",
+                        selected_menu_ids: [],
+                      });
                     }}
-                    className="w-full p-4 border-2 border-dashed border-[var(--border)] rounded-lg text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors duration-200 flex items-center justify-center gap-2"
+                    required
+                    className="w-full px-4 py-3 bg-[var(--background)] border-2 border-[var(--border)] rounded-lg focus:ring-2 focus:ring-[var(--border)] focus:border-[var(--border)] outline-none text-[var(--text-primary)]"
                   >
-                    <span className="text-2xl">+</span>
-                    <span className="font-medium">Add Menu</span>
-                  </button>
+                    <option value="">Select Cuisine</option>
+                    {cuisines.map((cuisine) => (
+                      <option key={cuisine.id} value={cuisine.id}>
+                        {cuisine.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                      Menu Item *
+                    </label>
+                    {formData.selected_menus.length > 0 && (
+                      <div className="mb-3 space-y-2">
+                        {formData.selected_menus.map((menu) => (
+                          <div
+                            key={menu.id}
+                            className="flex items-center justify-between p-3 bg-[var(--hover-bg)] border-2 border-[var(--border)] rounded-lg"
+                          >
+                            <div className="flex-1">
+                              <div className="font-semibold text-[var(--text-primary)]">{menu.name}</div>
+                              <div className="text-sm text-[var(--text-secondary)]">
+                                {menu.cuisine_name} • {menu.item_type_name}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeMenu(menu.id)}
+                              className="ml-4 px-3 py-1 text-sm bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors duration-200 border border-red-500"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openMenuModal();
+                      }}
+                      disabled={!formData.cuisine}
+                      className="w-full p-4 border-2 border-dashed border-[var(--border)] rounded-lg text-[var(--text-primary)] hover:bg-[var(--hover-bg)] transition-colors duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span className="text-2xl">+</span>
+                      <span className="font-medium">Add Menu Item</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Extras Column */}
@@ -824,49 +956,47 @@ export default function CreateEventPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
-                      Cuisine *
+                      Menus
                     </label>
-                    <select
-                      value={modalData.cuisine}
-                      onChange={(e) => setModalData({ ...modalData, cuisine: e.target.value, item_type: "", selected_menu_ids: [] })}
-                      required
-                      className="w-full px-4 py-3 bg-[var(--background)] border-2 border-[var(--border)] rounded-lg focus:ring-2 focus:ring-[var(--border)] focus:border-[var(--border)] outline-none text-[var(--text-primary)] transition-colors duration-200"
-                    >
-                      <option value="">Select Cuisine</option>
-                      {cuisines.map((cuisine) => (
-                        <option key={cuisine.id} value={cuisine.id}>
-                          {cuisine.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
-                      Menu Item *
-                    </label>
-                    <select
-                      value={modalData.item_type}
-                      onChange={(e) => setModalData({ ...modalData, item_type: e.target.value, selected_menu_ids: [] })}
-                      required
-                      disabled={!modalData.cuisine}
-                      className="w-full px-4 py-3 bg-[var(--background)] border-2 border-[var(--border)] rounded-lg focus:ring-2 focus:ring-[var(--border)] focus:border-[var(--border)] outline-none text-[var(--text-primary)] transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <option value="">Select Menu Item</option>
-                      {itemTypes.map((itemType) => (
-                        <option key={itemType.id} value={itemType.id}>
-                          {itemType.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex flex-wrap gap-2">
+                      {itemTypes.map((itemType) => {
+                        const active = modalData.item_type === String(itemType.id);
+                        // Check persistent state first, then fallback to formData
+                        const savedSelection = selectionsByMenuType[itemType.id];
+                        const existing = formData.selected_menus.find((m) => m.item_type_id === itemType.id);
+                        const selectionId = savedSelection?.id || existing?.id;
+                        return (
+                          <button
+                            key={itemType.id}
+                            type="button"
+                            onClick={() => {
+                              const newItemType = String(itemType.id);
+                              setModalData({
+                                ...modalData,
+                                item_type: newItemType,
+                                selected_menu_ids: selectionId ? [selectionId] : [],
+                              });
+                            }}
+                            disabled={!formData.cuisine}
+                            className={`px-3 py-2 rounded-full border text-sm ${
+                              active
+                                ? "bg-[var(--border)] text-[var(--background)] border-[var(--border)]"
+                                : "bg-[var(--background)] text-[var(--text-primary)] border-[var(--border)] hover:bg-[var(--hover-bg)]"
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            {itemType.name}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
-                {modalData.cuisine && modalData.item_type && (
+                    {formData.cuisine && modalData.item_type && (
                   <div>
-                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
-                      Select Menus * (Select one or more)
-                    </label>
+                        <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                          Select Menu Item * (single selection)
+                        </label>
                     {loadingMenus ? (
                       <div className="p-4 text-center text-[var(--text-secondary)]">
                         Loading menus...
@@ -890,7 +1020,7 @@ export default function CreateEventPage() {
                           >
                             <div className="font-semibold">{menu.name}</div>
                             <div className="text-sm opacity-80">
-                              ${menu.price || "0.00"} per person
+                              {menu.cuisine_name} • {menu.item_type_name}
                             </div>
                           </button>
                         ))}
@@ -903,7 +1033,7 @@ export default function CreateEventPage() {
                   <button
                     type="button"
                     onClick={addMenusFromModal}
-                    disabled={modalData.selected_menu_ids.length === 0}
+                    disabled={Object.keys(selectionsByMenuType).length === 0}
                     className="flex-1 px-4 py-3 bg-[var(--border)] text-[var(--background)] rounded-lg font-medium hover:bg-[var(--primary-dark)] transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed border-2 border-[var(--border)]"
                   >
                     Add Selected Menus
@@ -1004,5 +1134,19 @@ export default function CreateEventPage() {
         )}
       </div>
     </DashboardLayout>
+  );
+}
+
+export default function CreateEventPage() {
+  return (
+    <Suspense fallback={
+      <DashboardLayout>
+        <div className="max-w-4xl mx-auto p-6">
+          <div className="text-center text-[var(--text-secondary)]">Loading...</div>
+        </div>
+      </DashboardLayout>
+    }>
+      <CreateEventPageContent />
+    </Suspense>
   );
 }

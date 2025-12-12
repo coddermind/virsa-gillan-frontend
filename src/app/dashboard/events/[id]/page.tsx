@@ -354,7 +354,7 @@ export default function EventDetailPage() {
                         {menu.cuisine_name} • {menu.item_type_name}
                       </p>
                       <p className="text-sm font-medium text-[var(--text-primary)] mt-1">
-                        ${parseFloat(menu.price || "0").toFixed(2)} per person
+                        {menu.cuisine_name} • {menu.item_type_name}
                       </p>
                     </div>
                   ))}

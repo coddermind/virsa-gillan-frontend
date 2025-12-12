@@ -44,9 +44,9 @@ export default function CreateItemTypePage() {
             href="/dashboard/item-types"
             className="text-[var(--border)] hover:text-[var(--primary-dark)] text-sm font-medium mb-4 inline-block transition-colors duration-200"
           >
-            ← Back to Menu Items
+            ← Back to Menus
           </Link>
-          <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-2 transition-colors duration-300">Create New Menu Item</h2>
+          <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-2 transition-colors duration-300">Create New Menu</h2>
           <p className="text-[var(--text-secondary)] transition-colors duration-300">Add a new menu item category</p>
         </div>
 
@@ -91,7 +91,7 @@ export default function CreateItemTypePage() {
                 disabled={submitting}
                 className="px-6 py-3 bg-[var(--border)] text-[var(--background)] rounded-lg font-medium hover:bg-[var(--primary-dark)] transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed border-2 border-[var(--border)]"
               >
-                {submitting ? "Creating..." : "Create Menu Item"}
+                {submitting ? "Creating..." : "Create Menu"}
               </button>
               <Link
                 href="/dashboard/item-types"

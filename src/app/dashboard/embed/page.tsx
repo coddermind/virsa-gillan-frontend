@@ -27,10 +27,22 @@ export default function EmbedCodePage() {
     );
   }
 
-  // Get the current origin for the embed URL with user_id parameter
-  const embedUrl = typeof window !== "undefined" 
-    ? `${window.location.origin}/embed/calendar?user_id=${user.id}`
-    : `https://yourdomain.com/embed/calendar?user_id=${user.id}`;
+  // Get the current origin for the embed URL with token parameter
+  const token = user.embed_token;
+  const getEmbedUrl = () => {
+    if (typeof window !== "undefined") {
+      return `${window.location.origin}/embed/calendar?token=${token}`;
+    }
+    // Fallback for SSR: use environment variable or default
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_VERCEL_URL;
+    if (siteUrl) {
+      const baseUrl = siteUrl.startsWith('http') ? siteUrl : `https://${siteUrl}`;
+      return `${baseUrl}/embed/calendar?token=${token}`;
+    }
+    // Last resort fallback (should not happen in production)
+    return `/embed/calendar?token=${token}`;
+  };
+  const embedUrl = getEmbedUrl();
 
   const embedCode = `<iframe 
   src="${embedUrl}" 
