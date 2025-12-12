@@ -29,28 +29,127 @@ export default function EmbedCodePage() {
 
   // Get the current origin for the embed URL with token parameter
   const token = user.embed_token;
-  const getEmbedUrl = () => {
+  const borderColor = "#fbbf24"; // Default border color
+  const borderWidth = "2px"; // Default border width
+  const borderRadius = "8px"; // Default border radius
+  const containerBg = "#ffffff"; // Default container background color
+  const inputBg = "#ffffff"; // Default input background color
+  const fontSize = "16px"; // Default font size
+  const fontFamily = "inherit"; // Default font family
+  const textColor = "#111827"; // Default text color
+  
+  // Day status colors
+  const availableDayBg = "#f9fafb"; // Default available day background
+  const availableDayBorder = "#e5e7eb"; // Default available day border
+  const partialDayBg = "#fef3c7"; // Default partially booked day background
+  const partialDayBorder = "#fbbf24"; // Default partially booked day border
+  const fullDayBg = "#fee2e2"; // Default fully booked day background
+  const fullDayBorder = "#f87171"; // Default fully booked day border
+  const todayRing = "#fbbf24"; // Default today ring color
+  
+  // Generate unique ID for this iframe instance
+  const iframeId = `calendar-widget-${Math.random().toString(36).substr(2, 9)}`;
+  
+  // Get the base URL for the embed (frontend URL)
+  const getBaseUrl = () => {
     if (typeof window !== "undefined") {
-      return `${window.location.origin}/embed/calendar?token=${token}`;
+      return window.location.origin;
     }
-    // Fallback for SSR: use environment variable or default
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_VERCEL_URL;
     if (siteUrl) {
-      const baseUrl = siteUrl.startsWith('http') ? siteUrl : `https://${siteUrl}`;
-      return `${baseUrl}/embed/calendar?token=${token}`;
+      return siteUrl.startsWith('http') ? siteUrl : `https://${siteUrl}`;
     }
-    // Last resort fallback (should not happen in production)
-    return `/embed/calendar?token=${token}`;
+    return '';
   };
-  const embedUrl = getEmbedUrl();
-
-  const embedCode = `<iframe 
-  src="${embedUrl}" 
+  
+  const baseUrl = getBaseUrl();
+  
+  const embedCode = `<div id="${iframeId}-wrapper" style="width: 100%;">
+<iframe 
+  id="${iframeId}"
   width="100%" 
   height="800" 
-  frameborder="0" 
-  style="border: 2px solid #fbbf24; border-radius: 8px;">
-</iframe>`;
+  frameborder="0"
+  data-token="${token || ""}"
+  data-base-url="${baseUrl}"
+  data-align="left"
+  data-container-bg="${containerBg}"
+  data-input-bg="${inputBg}"
+  data-text-color="${textColor}"
+  data-font-size="${fontSize}"
+  data-font-family="${fontFamily}"
+  data-border-color="${borderColor}"
+  data-border-width="${borderWidth}"
+  data-border-radius="${borderRadius}"
+  data-available-day-bg="${availableDayBg}"
+  data-available-day-border="${availableDayBorder}"
+  data-partial-day-bg="${partialDayBg}"
+  data-partial-day-border="${partialDayBorder}"
+  data-full-day-bg="${fullDayBg}"
+  data-full-day-border="${fullDayBorder}"
+  data-today-ring="${todayRing}"
+  style="
+    border: ${borderWidth} solid ${borderColor};
+    border-radius: ${borderRadius};
+    display: block;
+  ">
+</iframe>
+</div>
+<script>
+(function() {
+  const iframe = document.getElementById('${iframeId}');
+  if (!iframe) return;
+  
+  const wrapper = document.getElementById('${iframeId}-wrapper');
+  if (!wrapper) return;
+  
+  // Apply alignment
+  const align = iframe.dataset.align || 'left';
+  if (align === 'center') {
+    wrapper.style.display = 'flex';
+    wrapper.style.justifyContent = 'center';
+  } else if (align === 'right') {
+    wrapper.style.display = 'flex';
+    wrapper.style.justifyContent = 'flex-end';
+  } else {
+    // left (default)
+    wrapper.style.display = 'block';
+  }
+  
+  // Use data-base-url if provided and valid, otherwise fall back to window.location.origin
+  let baseUrl = iframe.dataset.baseUrl;
+  if (!baseUrl || baseUrl === '' || baseUrl.startsWith('file://')) {
+    // If data-base-url is empty or file:// protocol, use window.location.origin
+    // But if window.location.origin is also file://, we need a manual base URL
+    if (window.location.protocol === 'file:') {
+      console.error('Calendar Widget: Please set data-base-url attribute to your frontend URL (e.g., http://localhost:3001 or https://yourdomain.com)');
+      return;
+    }
+    baseUrl = window.location.origin;
+  }
+  
+  const params = new URLSearchParams({
+    token: iframe.dataset.token || '',
+    containerBg: iframe.dataset.containerBg || '#ffffff',
+    inputBg: iframe.dataset.inputBg || '#ffffff',
+    textColor: iframe.dataset.textColor || '#111827',
+    fontSize: iframe.dataset.fontSize || '16px',
+    fontFamily: iframe.dataset.fontFamily || 'inherit',
+    borderColor: iframe.dataset.borderColor || '#fbbf24',
+    borderWidth: iframe.dataset.borderWidth || '2px',
+    borderRadius: iframe.dataset.borderRadius || '8px',
+    availableDayBg: iframe.dataset.availableDayBg || '#f9fafb',
+    availableDayBorder: iframe.dataset.availableDayBorder || '#e5e7eb',
+    partialDayBg: iframe.dataset.partialDayBg || '#fef3c7',
+    partialDayBorder: iframe.dataset.partialDayBorder || '#fbbf24',
+    fullDayBg: iframe.dataset.fullDayBg || '#fee2e2',
+    fullDayBorder: iframe.dataset.fullDayBorder || '#f87171',
+    todayRing: iframe.dataset.todayRing || '#fbbf24'
+  });
+  
+  iframe.src = baseUrl + '/embed/calendar?' + params.toString();
+})();
+</script>`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(embedCode);
@@ -131,8 +230,25 @@ export default function EmbedCodePage() {
             <p className="text-[var(--text-secondary)] mb-2">
               You can customize the iframe dimensions by modifying the <code className="bg-[var(--background)] px-2 py-1 rounded border border-[var(--border)]">width</code> and <code className="bg-[var(--background)] px-2 py-1 rounded border border-[var(--border)]">height</code> attributes.
             </p>
-            <p className="text-[var(--text-secondary)]">
+            <p className="text-[var(--text-secondary)] mb-2">
               Example: <code className="bg-[var(--background)] px-2 py-1 rounded border border-[var(--border)]">width="600" height="600"</code>
+            </p>
+            <p className="text-[var(--text-secondary)] mb-2">
+              <strong>Alignment:</strong> You can control the calendar alignment by changing the <code className="bg-[var(--background)] px-2 py-1 rounded border border-[var(--border)]">data-align</code> attribute. Valid values are:
+            </p>
+            <ul className="list-disc list-inside text-[var(--text-secondary)] mb-2 space-y-1">
+              <li><code className="bg-[var(--background)] px-2 py-1 rounded border border-[var(--border)]">data-align="left"</code> - Aligns calendar to the left (default)</li>
+              <li><code className="bg-[var(--background)] px-2 py-1 rounded border border-[var(--border)]">data-align="center"</code> - Centers the calendar</li>
+              <li><code className="bg-[var(--background)] px-2 py-1 rounded border border-[var(--border)]">data-align="right"</code> - Aligns calendar to the right</li>
+            </ul>
+            <p className="text-[var(--text-secondary)] mb-2 mt-4">
+              <strong>Input Background Color:</strong> You can customize the background color of input fields in the booking popup using the <code className="bg-[var(--background)] px-2 py-1 rounded border border-[var(--border)]">data-input-bg</code> attribute.
+            </p>
+            <p className="text-[var(--text-secondary)] text-sm">
+              Example: <code className="bg-[var(--background)] px-2 py-1 rounded border border-[var(--border)]">data-input-bg="#f9fafb"</code>
+            </p>
+            <p className="text-[var(--text-secondary)] mt-4">
+              <strong>Note:</strong> If you're testing locally or embedding on a different domain, you may need to manually set the <code className="bg-[var(--background)] px-2 py-1 rounded border border-[var(--border)]">data-base-url</code> attribute to your frontend URL (e.g., <code className="bg-[var(--background)] px-2 py-1 rounded border border-[var(--border)]">data-base-url="http://localhost:3001"</code> or <code className="bg-[var(--background)] px-2 py-1 rounded border border-[var(--border)]">data-base-url="https://yourdomain.com"</code>).
             </p>
           </div>
 

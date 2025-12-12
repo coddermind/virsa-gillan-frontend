@@ -27,6 +27,27 @@ function EmbedCalendarContent() {
   const searchParams = useSearchParams();
   const embedToken = searchParams?.get("token") || null;
   
+  // Get customizable styling from URL parameters (for backward compatibility) or use defaults
+  // Note: Data attributes on iframe can't be read due to cross-origin restrictions,
+  // but they're shown in embed code for easy editing. Users should update URL params if needed.
+  const borderRadius = searchParams?.get("borderRadius") || "8px";
+  const borderColor = searchParams?.get("borderColor") || "#fbbf24";
+  const borderWidth = searchParams?.get("borderWidth") || "2px";
+  const containerBg = searchParams?.get("containerBg") || "#ffffff";
+  const inputBg = searchParams?.get("inputBg") || "#ffffff";
+  const fontSize = searchParams?.get("fontSize") || "16px";
+  const fontFamily = searchParams?.get("fontFamily") || "inherit";
+  const textColor = searchParams?.get("textColor") || "#111827";
+  
+  // Day status colors
+  const availableDayBg = searchParams?.get("availableDayBg") || "#f9fafb";
+  const availableDayBorder = searchParams?.get("availableDayBorder") || "#e5e7eb";
+  const partialDayBg = searchParams?.get("partialDayBg") || "#fef3c7";
+  const partialDayBorder = searchParams?.get("partialDayBorder") || "#fbbf24";
+  const fullDayBg = searchParams?.get("fullDayBg") || "#fee2e2";
+  const fullDayBorder = searchParams?.get("fullDayBorder") || "#f87171";
+  const todayRing = searchParams?.get("todayRing") || "#fbbf24";
+  
   const [mounted, setMounted] = useState(false);
   const [events, setEvents] = useState<Event[]>([]);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
@@ -255,16 +276,33 @@ function EmbedCalendarContent() {
     const menu = availableMenus.find((m) => m.id === menuId);
     if (!menu) return;
     
-    // Single selection per menu type
-    setModalData((prev) => ({
-      ...prev,
-      selected_menu_ids: [menuId],
-    }));
-    // Save to persistent state for this menu type with full menu data
-    setSelectionsByMenuType((prev) => ({
-      ...prev,
-      [itemTypeId]: { id: menuId, menu },
-    }));
+    // Check if already selected - toggle behavior
+    const isCurrentlySelected = modalData.selected_menu_ids.includes(menuId);
+    
+    if (isCurrentlySelected) {
+      // Deselect - remove from selection
+      setModalData((prev) => ({
+        ...prev,
+        selected_menu_ids: [],
+      }));
+      // Remove from persistent state
+      setSelectionsByMenuType((prev) => {
+        const updated = { ...prev };
+        delete updated[itemTypeId];
+        return updated;
+      });
+    } else {
+      // Select - single selection per menu type
+      setModalData((prev) => ({
+        ...prev,
+        selected_menu_ids: [menuId],
+      }));
+      // Save to persistent state for this menu type with full menu data
+      setSelectionsByMenuType((prev) => ({
+        ...prev,
+        [itemTypeId]: { id: menuId, menu },
+      }));
+    }
   };
 
   const addMenusFromModal = () => {
@@ -533,10 +571,35 @@ function EmbedCalendarContent() {
     );
   }
 
+  // Create base style object for the container
+  const containerStyle: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    border: `${borderWidth} solid ${borderColor}`,
+    borderRadius: borderRadius,
+    backgroundColor: containerBg,
+    fontSize: fontSize,
+    fontFamily: fontFamily,
+    color: textColor,
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden", // Always fill, no internal scrolling
+    position: "relative"
+  };
+
+  // Base text style with fontSize applied
+  const textStyle: React.CSSProperties = {
+    fontSize: fontSize,
+    fontFamily: fontFamily,
+    color: textColor
+  };
+
   return (
-    <div className="h-full min-h-0 bg-white p-3" style={{ width: "100%", height: "100%" }}>
-      <div className="w-full max-w-3xl mx-auto h-full">
-        <h1 className="text-2xl font-bold text-gray-900 mb-4 text-center">Book Your Event</h1>
+    <div 
+      className="shadow-md p-4 flex flex-col"
+      style={containerStyle}
+    >
+        <h1 className="font-bold mb-4 text-center" style={{ ...textStyle, fontSize: `calc(${fontSize} * 1.5)` }}>Book Your Event</h1>
         
         {error && (
           <div className="mb-4 p-4 bg-red-50 border-2 border-red-500 rounded-lg text-red-700">
@@ -544,72 +607,99 @@ function EmbedCalendarContent() {
           </div>
         )}
 
-        <div className="bg-white rounded-lg border border-yellow-400 shadow-md p-4 mb-5">
-          <div className="flex justify-between items-center mb-3">
-            <button
-              onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
-              className="px-3 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm"
+        <div className="flex justify-center items-center gap-3 mb-3 flex-shrink-0">
+            <select
+              value={currentDate.getMonth()}
+              onChange={(e) => setCurrentDate(new Date(currentDate.getFullYear(), parseInt(e.target.value), 1))}
+              className="px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
+              style={{ ...textStyle, fontSize: `calc(${fontSize} * 1.125)`, cursor: "pointer", color: textColor, backgroundColor: containerBg }}
             >
-              ← Prev
-            </button>
-            <h2 className="text-lg font-bold text-gray-900">
-              {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
-            </h2>
-            <button
-              onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
-              className="px-3 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm"
+              {monthNames.map((month, index) => (
+                <option key={index} value={index} style={{ backgroundColor: containerBg, color: textColor }}>{month}</option>
+              ))}
+            </select>
+            <select
+              value={currentDate.getFullYear()}
+              onChange={(e) => setCurrentDate(new Date(parseInt(e.target.value), currentDate.getMonth(), 1))}
+              className="px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
+              style={{ ...textStyle, fontSize: `calc(${fontSize} * 1.125)`, cursor: "pointer", color: textColor, backgroundColor: containerBg }}
             >
-              Next →
-            </button>
+              {Array.from({ length: 15 }, (_, i) => {
+                const year = new Date().getFullYear() - 2 + i;
+                return (
+                  <option key={year} value={year} style={{ backgroundColor: containerBg, color: textColor }}>{year}</option>
+                );
+              })}
+            </select>
           </div>
 
-          <div className="grid grid-cols-7 gap-1.5">
+          <div className="grid grid-cols-7 gap-1.5 flex-1 min-h-0" style={{ gridTemplateRows: 'auto repeat(6, 1fr)' }}>
             {dayNames.map((day) => (
-              <div key={day} className="text-center font-semibold text-gray-700 py-1.5 text-sm">
+              <div key={day} className="text-center font-semibold py-1.5 flex-shrink-0" style={textStyle}>
                 {day}
               </div>
             ))}
             {days.map((date, index) => {
               if (!date) {
-                return <div key={`empty-${index}`} className="aspect-square"></div>;
+                return <div key={`empty-${index}`} className="min-h-0"></div>;
               }
               const status = getDayStatus(date);
-              const isToday = formatDateLocal(date) === formatDateLocal(new Date());
+              
+              // Determine day cell styling based on status
+              let dayStyle: React.CSSProperties = { ...textStyle };
+              let dayClassName = "rounded-md border transition-all duration-200 flex items-center justify-center min-h-0";
+              
+              if (status === "fully-booked") {
+                dayStyle.backgroundColor = fullDayBg;
+                dayStyle.borderColor = fullDayBorder;
+                dayClassName += " cursor-not-allowed";
+              } else if (status === "partially-booked") {
+                dayStyle.backgroundColor = partialDayBg;
+                dayStyle.borderColor = partialDayBorder;
+                dayClassName += " hover:opacity-80";
+              } else {
+                dayStyle.backgroundColor = availableDayBg;
+                dayStyle.borderColor = availableDayBorder;
+                dayClassName += " hover:opacity-80";
+              }
               
               return (
                 <button
                   key={date.toISOString()}
                   onClick={() => handleDateClick(date)}
-                  className={`aspect-square rounded-md border transition-all duration-200 text-sm ${
-                    status === "fully-booked"
-                      ? "bg-red-500/15 border-red-400 text-red-700 cursor-not-allowed"
-                      : status === "partially-booked"
-                      ? "bg-yellow-500/15 border-yellow-400 text-yellow-700 hover:bg-yellow-500/25"
-                      : "bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100"
-                  } ${isToday ? "ring-2 ring-yellow-400" : ""}`}
+                  className={dayClassName}
+                  style={dayStyle}
                   disabled={status === "fully-booked"}
                 >
-                  <div className="text-sm font-semibold">{date.getDate()}</div>
+                  <div className="font-semibold" style={{ fontSize: fontSize }}>{date.getDate()}</div>
                 </button>
               );
             })}
           </div>
 
-          <div className="mt-3 flex gap-3 justify-center text-xs">
+          <div className="mt-3 flex gap-3 justify-center flex-shrink-0" style={{ fontSize: `calc(${fontSize} * 0.75)` }}>
             <div className="flex items-center gap-2">
-              <div className="w-3.5 h-3.5 bg-gray-50 border border-gray-300 rounded"></div>
-              <span className="text-gray-700">Available</span>
+              <div 
+                className="w-3.5 h-3.5 rounded border" 
+                style={{ backgroundColor: availableDayBg, borderColor: availableDayBorder }}
+              ></div>
+              <span style={textStyle}>Available</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3.5 h-3.5 bg-yellow-500/15 border border-yellow-400 rounded"></div>
-              <span className="text-gray-700">Partially Booked</span>
+              <div 
+                className="w-3.5 h-3.5 rounded border" 
+                style={{ backgroundColor: partialDayBg, borderColor: partialDayBorder }}
+              ></div>
+              <span style={textStyle}>Partially Booked</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3.5 h-3.5 bg-red-500/15 border border-red-400 rounded"></div>
-              <span className="text-gray-700">Fully Booked</span>
+              <div 
+                className="w-3.5 h-3.5 rounded border" 
+                style={{ backgroundColor: fullDayBg, borderColor: fullDayBorder }}
+              ></div>
+              <span style={textStyle}>Fully Booked</span>
             </div>
           </div>
-        </div>
 
         {/* Booking Modal (Popup) */}
         {showBookingForm && (
@@ -622,18 +712,19 @@ function EmbedCalendarContent() {
             }}
           >
             <div 
-              className="bg-white rounded-lg shadow-lg border border-yellow-500 p-4 max-w-xl w-full max-h-[90vh] overflow-y-auto"
-              style={{ position: 'relative', zIndex: 10000 }}
+              className="rounded-lg shadow-lg border border-yellow-500 p-4 max-w-xl w-full max-h-[90vh] overflow-y-auto"
+              style={{ position: 'relative', zIndex: 10000, backgroundColor: containerBg }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-gray-900">Book Event</h3>
+                <h3 className="text-xl font-bold" style={{ color: textColor }}>Book Event</h3>
                 <button
                   onClick={() => {
                     setShowBookingForm(false);
                     setSelectedDate(null);
                   }}
-                  className="text-gray-500 hover:text-gray-700 text-xl font-bold"
+                  className="text-xl font-bold hover:opacity-70 transition-opacity"
+                  style={{ color: textColor }}
                 >
                   ×
                 </button>
@@ -647,63 +738,68 @@ function EmbedCalendarContent() {
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Your Name *</label>
+                    <label className="block text-sm font-medium mb-2" style={{ color: textColor }}>Your Name *</label>
                     <input
                       type="text"
                       required
                       value={bookingData.customer_name}
                       onChange={(e) => setBookingData({ ...bookingData, customer_name: e.target.value })}
-                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
+                      style={{ color: textColor, backgroundColor: inputBg }}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Contact *</label>
+                    <label className="block text-sm font-medium mb-2" style={{ color: textColor }}>Contact *</label>
                     <input
                       type="text"
                       required
                       value={bookingData.customer_contact}
                       onChange={(e) => setBookingData({ ...bookingData, customer_contact: e.target.value })}
-                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
+                      className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
+                      style={{ color: textColor, backgroundColor: inputBg }}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Event Name *</label>
+                  <label className="block text-sm font-medium mb-2" style={{ color: textColor }}>Event Name *</label>
                   <input
                     type="text"
                     required
                     value={bookingData.event_name}
                     onChange={(e) => setBookingData({ ...bookingData, event_name: e.target.value })}
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
+                    style={{ color: textColor, backgroundColor: inputBg }}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Location *</label>
+                  <label className="block text-sm font-medium mb-2" style={{ color: textColor }}>Location *</label>
                   <input
                     type="text"
                     required
                     value={bookingData.location}
                     onChange={(e) => setBookingData({ ...bookingData, location: e.target.value })}
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
+                    style={{ color: textColor, backgroundColor: inputBg }}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Number of Persons *</label>
+                  <label className="block text-sm font-medium mb-2" style={{ color: textColor }}>Number of Persons *</label>
                   <input
                     type="number"
                     min="1"
                     required
                     value={bookingData.number_of_persons}
                     onChange={(e) => setBookingData({ ...bookingData, number_of_persons: e.target.value })}
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
+                    style={{ color: textColor, backgroundColor: inputBg }}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Time Slot *</label>
+                  <label className="block text-sm font-medium mb-2" style={{ color: textColor }}>Time Slot *</label>
                   {availableTimeSlots.length === 0 ? (
                     <p className="text-red-600">No time slots available for this day.</p>
                   ) : (
@@ -750,11 +846,12 @@ function EmbedCalendarContent() {
                       });
                     }}
                     required
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
+                    style={{ color: textColor, backgroundColor: inputBg }}
                   >
-                    <option value="">Select Cuisine</option>
+                    <option value="" style={{ backgroundColor: inputBg, color: textColor }}>Select Cuisine</option>
                     {cuisines.map((cuisine) => (
-                      <option key={cuisine.id} value={cuisine.id}>
+                      <option key={cuisine.id} value={cuisine.id} style={{ backgroundColor: inputBg, color: textColor }}>
                         {cuisine.name}
                       </option>
                     ))}
@@ -866,7 +963,8 @@ function EmbedCalendarContent() {
                     value={bookingData.customer_address}
                     onChange={(e) => setBookingData({ ...bookingData, customer_address: e.target.value })}
                     rows={3}
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
+                    style={{ color: textColor, backgroundColor: inputBg }}
                   />
                 </div>
 
@@ -906,9 +1004,9 @@ function EmbedCalendarContent() {
             }}
           >
             <div
-              className="bg-white rounded-xl shadow-lg border-2 border-yellow-500 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+              className="rounded-xl shadow-lg border-2 border-yellow-500 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
-              style={{ position: 'relative', zIndex: 10002 }}
+              style={{ position: 'relative', zIndex: 10002, backgroundColor: containerBg }}
             >
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xl font-bold text-gray-900">Add Menu</h3>
@@ -1032,9 +1130,9 @@ function EmbedCalendarContent() {
             }}
           >
             <div
-              className="bg-white rounded-xl shadow-lg border-2 border-yellow-500 p-6 max-w-md w-full"
+              className="rounded-xl shadow-lg border-2 border-yellow-500 p-6 max-w-md w-full"
               onClick={(e) => e.stopPropagation()}
-              style={{ position: 'relative', zIndex: 10002 }}
+              style={{ position: 'relative', zIndex: 10002, backgroundColor: containerBg }}
             >
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xl font-bold text-gray-900">Add Extra Item</h3>
@@ -1055,7 +1153,8 @@ function EmbedCalendarContent() {
                     value={extrasModalData.name}
                     onChange={(e) => setExtrasModalData({ ...extrasModalData, name: e.target.value })}
                     required
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
+                    style={{ color: textColor, backgroundColor: inputBg }}
                     placeholder="e.g., Decoration, DJ Service"
                   />
                   <p className="mt-1 text-xs text-gray-500">Charges will be set by the admin when approving your booking.</p>
@@ -1082,7 +1181,6 @@ function EmbedCalendarContent() {
           </div>,
           document.body
         )}
-      </div>
     </div>
   );
 }
@@ -1090,7 +1188,7 @@ function EmbedCalendarContent() {
 export default function EmbedCalendarPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="h-full flex items-center justify-center bg-white">
         <div className="text-center">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-yellow-500 border-r-transparent"></div>
           <p className="mt-4 text-gray-600">Loading calendar...</p>
