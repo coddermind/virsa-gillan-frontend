@@ -17,6 +17,7 @@ import {
   Code,
   ChevronDown,
   ChevronUp,
+  Settings,
 } from "lucide-react";
 
 interface DashboardSidebarProps {
@@ -82,12 +83,21 @@ export default function DashboardSidebar({ stats }: DashboardSidebarProps) {
         { href: "/dashboard/embed", label: "Embed Code", icon: Code, count: null, color: "indigo" },
       ],
     },
+    {
+      label: "Admin Management",
+      icon: Settings,
+      key: "admin",
+      children: [
+        { href: "/dashboard/admin/settings", label: "Settings", icon: Settings, count: null, color: "gray" },
+      ],
+    },
   ];
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     cuisine: false,
     events: false,
     calendar: false,
+    admin: false,
   });
 
   const normalizePath = (path: string) => (path !== "/" ? path.replace(/\/+$/, "") : "/");

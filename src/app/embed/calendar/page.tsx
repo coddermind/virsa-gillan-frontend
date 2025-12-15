@@ -61,9 +61,9 @@ function EmbedCalendarContent() {
   const [bookingData, setBookingData] = useState({
     customer_name: "",
     customer_contact: "",
+    customer_email: "",
     customer_address: "",
     event_name: "",
-    location: "",
     date: "",
     time_slot: "",
     number_of_persons: "1",
@@ -516,9 +516,9 @@ function EmbedCalendarContent() {
       const bookingPayload = {
         customer_name: bookingData.customer_name,
         customer_contact: bookingData.customer_contact,
+        customer_email: bookingData.customer_email,
         customer_address: bookingData.customer_address,
         name: bookingData.event_name,
-        location: bookingData.location,
         date: bookingData.date,
         time_slot: parseInt(bookingData.time_slot),
         number_of_persons: parseInt(bookingData.number_of_persons) || 1,
@@ -538,9 +538,9 @@ function EmbedCalendarContent() {
       setBookingData({
         customer_name: "",
         customer_contact: "",
+        customer_email: "",
         customer_address: "",
         event_name: "",
-        location: "",
         date: "",
         time_slot: "",
         number_of_persons: "1",
@@ -774,14 +774,15 @@ function EmbedCalendarContent() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: textColor }}>Location *</label>
+                  <label className="block text-sm font-medium mb-2" style={{ color: textColor }}>Customer Email *</label>
                   <input
-                    type="text"
+                    type="email"
                     required
-                    value={bookingData.location}
-                    onChange={(e) => setBookingData({ ...bookingData, location: e.target.value })}
+                    value={bookingData.customer_email}
+                    onChange={(e) => setBookingData({ ...bookingData, customer_email: e.target.value })}
                     className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
                     style={{ color: textColor, backgroundColor: inputBg }}
+                    placeholder="customer@example.com"
                   />
                 </div>
 

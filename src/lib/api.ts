@@ -701,6 +701,37 @@ class ApiClient {
       },
     });
   }
+
+  // Admin Settings endpoints
+  async getAdminSettings(): Promise<AdminSettings> {
+    return this.request<AdminSettings>("/admin/settings/");
+  }
+
+  async updateAdminSettings(data: Partial<AdminSettings>): Promise<AdminSettings> {
+    return this.request<AdminSettings>("/admin/settings/update/", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createAdminSettings(data: Partial<AdminSettings>): Promise<AdminSettings> {
+    return this.request<AdminSettings>("/admin/settings/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+}
+
+export interface AdminSettings {
+  id?: number;
+  event_location: string;
+  email_host: string;
+  email_port: number;
+  email_username: string;
+  email_password: string;
+  email_from: string;
+  email_to_list: string; // Comma-separated list
+  user?: number;
 }
 
 export const apiClient = new ApiClient(API_BASE_URL);

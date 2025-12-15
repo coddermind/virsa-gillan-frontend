@@ -28,7 +28,7 @@ function CreateEventPageContent() {
   
   const [formData, setFormData] = useState({
     name: "",
-    location: "",
+    customer_email: "",
     date: urlDate,
     time_slot: urlTimeSlot,
     number_of_persons: "1",
@@ -515,7 +515,7 @@ function CreateEventPageContent() {
     try {
       const cleanedData: any = {
         name: formData.name.trim(),
-        location: formData.location.trim(),
+        customer_email: formData.customer_email.trim(),
         date: formData.date,
         time_slot: parseInt(formData.time_slot),
         cuisine: formData.selected_menus[0] ? parseInt(cuisines.find(c => c.name === formData.selected_menus[0].cuisine_name)?.id.toString() || "0") : undefined,
@@ -595,7 +595,7 @@ function CreateEventPageContent() {
                 </div>
               </div>
 
-              {/* Row 2: Customer Contact, Event Location */}
+              {/* Row 2: Customer Contact, Customer Email */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
@@ -611,15 +611,15 @@ function CreateEventPageContent() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
-                    Event Location *
+                    Customer Email *
                   </label>
                   <input
-                    type="text"
-                    value={formData.location}
-                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    type="email"
+                    value={formData.customer_email}
+                    onChange={(e) => setFormData({ ...formData, customer_email: e.target.value })}
                     required
                     className="w-full px-4 py-3 bg-[var(--background)] border-2 border-[var(--border)] rounded-lg focus:ring-2 focus:ring-[var(--border)] focus:border-[var(--border)] outline-none text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] transition-colors duration-200"
-                    placeholder="e.g., Grand Ballroom, Hotel XYZ"
+                    placeholder="customer@example.com"
                   />
                 </div>
               </div>
