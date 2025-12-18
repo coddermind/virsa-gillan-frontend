@@ -4,7 +4,8 @@ import { useState, useEffect, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import { apiClient, Event, TimeSlot, Cuisine, ItemType, SubItem } from "@/lib/api";
-import { Calendar, Clock, MapPin, Users, UtensilsCrossed, Plus, X } from "lucide-react";
+import { Calendar, Clock, MapPin, Users, UtensilsCrossed, Plus, X, Mic } from "lucide-react";
+import VoiceChat from "@/components/VoiceChat";
 
 // Helper function to format date as YYYY-MM-DD in local timezone
 const formatDateLocal = (date: Date): string => {
@@ -53,6 +54,7 @@ function EmbedCalendarContent() {
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [cuisines, setCuisines] = useState<Cuisine[]>([]);
   const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
+  const [subItems, setSubItems] = useState<SubItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -89,6 +91,7 @@ function EmbedCalendarContent() {
     name: "",
   });
   const [calculatedMenuTotal, setCalculatedMenuTotal] = useState(0);
+  const [showVoiceChat, setShowVoiceChat] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -111,8 +114,28 @@ function EmbedCalendarContent() {
       const data = await apiClient.getPublicCalendar(embedToken);
       setEvents(Array.isArray(data.events) ? data.events : []);
       setTimeSlots(Array.isArray(data.time_slots) ? data.time_slots : []);
-      setCuisines(Array.isArray(data.cuisines) ? data.cuisines : []);
-      setItemTypes(Array.isArray(data.item_types) ? data.item_types : []);
+      const loadedCuisines = Array.isArray(data.cuisines) ? data.cuisines : [];
+      const loadedItemTypes = Array.isArray(data.item_types) ? data.item_types : [];
+      setCuisines(loadedCuisines);
+      setItemTypes(loadedItemTypes);
+      
+      // Fetch all subItems (menu items) for all cuisines and item types
+      const allSubItems: SubItem[] = [];
+      for (const cuisine of loadedCuisines) {
+        for (const itemType of loadedItemTypes) {
+          try {
+            const menus = await apiClient.getPublicMenus(embedToken, cuisine.id, itemType.id);
+            if (Array.isArray(menus)) {
+              allSubItems.push(...menus);
+            }
+          } catch (err) {
+            // Continue if one fetch fails
+            console.warn(`Failed to fetch menus for cuisine ${cuisine.id}, itemType ${itemType.id}:`, err);
+          }
+        }
+      }
+      setSubItems(allSubItems);
+      
       setError("");
     } catch (err: any) {
       setError(err.message || "Failed to load calendar");
@@ -599,7 +622,22 @@ function EmbedCalendarContent() {
       className="shadow-md p-4 flex flex-col"
       style={containerStyle}
     >
-        <h1 className="font-bold mb-4 text-center" style={{ ...textStyle, fontSize: `calc(${fontSize} * 1.5)` }}>Book Your Event</h1>
+        <div className="flex items-center justify-between mb-4">
+        <h1 className="font-bold flex-1 text-center" style={{ ...textStyle, fontSize: `calc(${fontSize} * 1.5)` }}>Book Your Event</h1>
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setShowVoiceChat(true);
+          }}
+          className="p-2 rounded-full hover:bg-black/10 transition-colors flex-shrink-0 cursor-pointer"
+          style={{ color: textColor }}
+          title="Voice Assistant"
+          type="button"
+        >
+          <Mic className="w-6 h-6" />
+        </button>
+      </div>
         
         {error && (
           <div className="mb-4 p-4 bg-red-50 border-2 border-red-500 rounded-lg text-red-700">
@@ -1182,6 +1220,33 @@ function EmbedCalendarContent() {
           </div>,
           document.body
         )}
+
+      {/* Voice Chat Modal */}
+      {showVoiceChat && mounted && (
+        <div 
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-3" 
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}
+          onClick={() => {
+            setShowVoiceChat(false);
+          }}
+        >
+          <VoiceChat
+            key={showVoiceChat ? 'voice-chat-open' : 'voice-chat-closed'}
+            onClose={() => {
+              setShowVoiceChat(false);
+            }}
+            containerBg={containerBg}
+            textColor={textColor}
+            embedToken={embedToken}
+            events={events}
+            timeSlots={timeSlots}
+            cuisines={cuisines}
+            itemTypes={itemTypes}
+            subItems={subItems}
+            currentMonth={currentDate}
+          />
+        </div>
+      )}
     </div>
   );
 }
