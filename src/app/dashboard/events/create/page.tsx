@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiClient, TimeSlot, Cuisine, ItemType, SubItem, Event } from "@/lib/api";
+import { apiClient, TimeSlot, Cuisine, ItemType, SubItem, Event, AdminSettings } from "@/lib/api";
 import DashboardLayout from "@/components/DashboardLayout";
 import Link from "next/link";
 
@@ -28,6 +28,7 @@ function CreateEventPageContent() {
   
   const [formData, setFormData] = useState({
     name: "",
+    location: "",
     customer_email: "",
     date: urlDate,
     time_slot: urlTimeSlot,
@@ -96,6 +97,36 @@ function CreateEventPageContent() {
       });
     }
   }, [urlDate, urlTimeSlot]);
+
+  // Load admin settings to pre-fill location
+  useEffect(() => {
+    if (!user) return;
+    
+    const loadAdminSettings = async () => {
+      try {
+        const adminSettings = await apiClient.getAdminSettings();
+        // Pre-fill location from admin settings if available and not empty
+        const eventLocation = adminSettings?.event_location?.trim();
+        if (eventLocation) {
+          setFormData((prev) => {
+            // Only update if location is currently empty (to avoid overwriting user input)
+            if (!prev.location?.trim()) {
+              return {
+                ...prev,
+                location: eventLocation,
+              };
+            }
+            return prev;
+          });
+        }
+      } catch (settingsErr) {
+        // Admin settings don't exist yet or failed to load - that's okay
+        // Location field will remain empty and user can fill it manually
+      }
+    };
+    
+    loadAdminSettings();
+  }, [user]);
 
   // Load cuisines and item types on mount
   useEffect(() => {
@@ -515,6 +546,7 @@ function CreateEventPageContent() {
     try {
       const cleanedData: any = {
         name: formData.name.trim(),
+        location: formData.location.trim(),
         customer_email: formData.customer_email.trim(),
         date: formData.date,
         time_slot: parseInt(formData.time_slot),
@@ -595,7 +627,27 @@ function CreateEventPageContent() {
                 </div>
               </div>
 
-              {/* Row 2: Customer Contact, Customer Email */}
+              {/* Row 2: Location */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                    Location *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    required
+                    className="w-full px-4 py-3 bg-[var(--background)] border-2 border-[var(--border)] rounded-lg focus:ring-2 focus:ring-[var(--border)] focus:border-[var(--border)] outline-none text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] transition-colors duration-200"
+                    placeholder="e.g., Grand Ballroom, Hotel XYZ"
+                  />
+                  <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                    Pre-filled from admin settings. You can modify if needed.
+                  </p>
+                </div>
+              </div>
+
+              {/* Row 3: Customer Contact, Customer Email */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">

@@ -56,14 +56,14 @@ export interface SubItem {
   image?: File | string;
   image_url?: string;
   price?: string;
-  item_type: number;
+  item_type: number; // ID of the item type (menu category)
   item_type_name: string;
-  cuisine: number;
+  cuisine: number; // ID of the cuisine
   cuisine_name: string;
   user: string;
   is_active: boolean;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface BudgetEntry {

@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useRouter } from "next/navigation";
 import DashboardSidebar from "./DashboardSidebar";
-import { apiClient } from "@/lib/api";
+import { apiClient, Event } from "@/lib/api";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -75,7 +75,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         cuisines: Array.isArray(cuisines) ? cuisines.length : 0,
         itemTypes: Array.isArray(itemTypes) ? itemTypes.length : 0,
         subItems: Array.isArray(subItems) ? subItems.length : 0,
-        events: Array.isArray(events) ? events.length : 0,
+        events: Array.isArray(events) ? events.filter((e) => e.status === "approved").length : 0,
         timeSlots: Array.isArray(timeSlots) ? timeSlots.length : 0,
         pendingEvents: Array.isArray(pendingEvents) ? pendingEvents.length : 0,
       });

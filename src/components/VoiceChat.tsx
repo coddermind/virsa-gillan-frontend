@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Mic, X } from "lucide-react";
+import { Mic, X, Volume2 } from "lucide-react";
 import { GoogleGenAI, LiveServerMessage, Modality, Session } from "@google/genai";
 import { createBlob, decode, decodeAudioData } from "@/lib/audioUtils";
 import WaveVisualization from "./WaveVisualization";
@@ -40,6 +40,8 @@ export default function VoiceChat({
   const [showBookingConfirmation, setShowBookingConfirmation] = useState(false);
   const [pendingBookingData, setPendingBookingData] = useState<any>(null);
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [confirmedBookingData, setConfirmedBookingData] = useState<any>(null);
 
   // Gemini Live API refs
   const clientRef = useRef<GoogleGenAI | null>(null);
@@ -63,31 +65,100 @@ export default function VoiceChat({
   const nextStartTimeRef = useRef<number>(0);
 
   /**
-   * Build simple cuisine data - only cuisine names (manager-specific)
+   * Build nested menu data structure (manager-specific)
+   * Structure: cuisines → menus → menu_items
    */
-  const buildCuisineData = (): string => {
-    // IMPORTANT: All cuisines are already filtered by embed_token on the backend
+  const buildMenuData = (): string => {
+    // IMPORTANT: All data is already filtered by embed_token on the backend
     // The embed_token identifies the specific manager/admin, so all data here is manager-specific
-    console.log("📊 Building cuisine data (Manager-specific via embed_token):", {
-      embedToken: embedToken ? `${embedToken.substring(0, 8)}...` : "none",
+    
+    console.log("🔍 Building nested menu data - Input data:", {
       cuisinesCount: cuisines?.length || 0,
+      itemTypesCount: itemTypes?.length || 0,
+      subItemsCount: subItems?.length || 0,
+      sampleSubItem: subItems?.[0] || null,
+    });
+    
+    // Build nested structure: cuisines containing menus containing menu_items
+    const cuisinesData = (cuisines || []).map((cuisine: any) => {
+      // Find all menu items for this cuisine
+      // IMPORTANT: subItems should have 'cuisine' field as ID (number)
+      const cuisineMenuItems = (subItems || []).filter((item: any) => {
+        // Handle both number and string comparisons
+        const itemCuisineId = typeof item.cuisine === 'number' ? item.cuisine : parseInt(String(item.cuisine));
+        const cuisineId = typeof cuisine.id === 'number' ? cuisine.id : parseInt(String(cuisine.id));
+        return itemCuisineId === cuisineId;
+      });
+      
+      console.log(`🍽️ Cuisine "${cuisine.name}" (ID: ${cuisine.id}) has ${cuisineMenuItems.length} menu items`);
+      
+      // Group menu items by their menu (item_type)
+      const menusMap = new Map<number, any>();
+      
+      cuisineMenuItems.forEach((item: any) => {
+        // IMPORTANT: subItems should have 'item_type' field as ID (number)
+        const menuId = typeof item.item_type === 'number' ? item.item_type : parseInt(String(item.item_type));
+        const menuName = item.item_type_name || "";
+        
+        if (!menuId || isNaN(menuId)) {
+          console.warn("⚠️ Menu item missing valid item_type ID:", item);
+          return;
+        }
+        
+        if (!menusMap.has(menuId)) {
+          // Find the menu details from itemTypes
+          const menuDetails = itemTypes?.find((menu: any) => {
+            const menuIdNum = typeof menu.id === 'number' ? menu.id : parseInt(String(menu.id));
+            return menuIdNum === menuId;
+          });
+          menusMap.set(menuId, {
+            menu_id: menuId,
+            menu_name: menuName || menuDetails?.name || `Menu ID: ${menuId}`,
+            menu_items: [],
+          });
+        }
+        
+        // Check if cuisine has a price set
+        const cuisineHasPrice = cuisine.price != null && cuisine.price !== "" && parseFloat(String(cuisine.price)) > 0;
+        
+        // Add menu item to the menu
+        const menuItem = {
+          menu_item_id: item.id,
+          menu_item_name: item.name,
+          menu_item_price: !cuisineHasPrice && item.price ? parseFloat(String(item.price)) : null,
+        };
+        
+        menusMap.get(menuId)!.menu_items.push(menuItem);
+      });
+      
+      // Convert map to array and sort by menu_id
+      const menusArray = Array.from(menusMap.values()).sort((a, b) => a.menu_id - b.menu_id);
+      
+      console.log(`📋 Cuisine "${cuisine.name}" has ${menusArray.length} menus:`, menusArray.map(m => `${m.menu_name} (${m.menu_items.length} items)`));
+      
+      return {
+        cuisine_id: cuisine.id,
+        cuisine_name: cuisine.name,
+        cuisine_price: cuisine.price ? parseFloat(String(cuisine.price)) : null,
+        menus: menusArray,
+      };
     });
 
-    // Extract only cuisine names
-    const cuisineNames = cuisines && cuisines.length > 0
-      ? cuisines.map((cuisine: any) => ({
-          id: cuisine.id,
-          name: cuisine.name,
-        }))
-      : [];
-
-    const cuisineData = {
-      cuisines: cuisineNames,
+    const menuDataStructure = {
+      cuisines: cuisinesData,
     };
 
-    console.log("📋 Available cuisines for this manager:", cuisineNames.map((c: any) => c.name));
+    console.log("📊 Built nested menu data structure (Manager-specific):", {
+      embedToken: embedToken ? `${embedToken.substring(0, 8)}...` : "none",
+      cuisinesCount: cuisinesData.length,
+      totalMenusCount: cuisinesData.reduce((sum, c) => sum + c.menus.length, 0),
+      totalMenuItemsCount: cuisinesData.reduce((sum, c) => 
+        sum + c.menus.reduce((menuSum: number, m: any) => menuSum + m.menu_items.length, 0), 0
+      ),
+      structure: menuDataStructure,
+    });
 
-    return JSON.stringify(cuisineData, null, 2);
+    return JSON.stringify(menuDataStructure, null, 2);
   };
 
   /**
@@ -178,55 +249,119 @@ IMPORTANT: When a user asks about availability for a specific date, check this d
 ### Monthly Availability Data (JSON):
 ${JSON.stringify(monthlyAvailability, null, 2)}
 
-## Available Cuisines:
-The following data shows all available cuisines offered by this manager/admin.
+## Available Cuisines, Menus, and Menu Items:
+The following data shows all available cuisines, menus, and menu items offered by this manager/admin.
 
 **CRITICAL**: 
-- This cuisine data is specific to the manager/admin who provided the embed code (identified by embed_token)
-- **ONLY** mention cuisines that are present in the provided cuisine data
-- **NEVER** mention or suggest cuisines that are not in the provided data
-- Use the exact cuisine names as they appear in the data
+- This data is specific to the manager/admin who provided the embed code (identified by embed_token)
+- **ONLY** mention cuisines, menus, or menu items that are present in the provided data
+- **NEVER** mention or suggest anything that is not in the provided data
+- Use the **EXACT** names as they appear in the data - do not add, modify, abbreviate, or paraphrase names
 
-### How to Use Cuisine Data:
-When users ask about available cuisines, simply list the cuisine names from the provided data.
+### Data Structure:
+The data is organized in a nested hierarchical structure:
+- **cuisines**: Array of cuisine objects, each containing:
+  - cuisine_id: ID to use when booking (REQUIRED for booking)
+  - cuisine_name: Exact name of the cuisine
+  - cuisine_price: Fixed price per person (null if no fixed price set)
+  - menus: Array of menu objects for this cuisine, each containing:
+    - menu_id: ID of the menu category
+    - menu_name: Exact name of the menu category
+    - menu_items: Array of menu items in this menu, each containing:
+      - menu_item_id: ID to use when booking (REQUIRED for booking)
+      - menu_item_name: Exact name of the menu item
+      - menu_item_price: Price for this item (only shown if cuisine doesn't have fixed price, otherwise null)
 
-**Example Response Format:**
-If user asks "What cuisines do you offer?" or "What cuisines are available?", you should respond like:
-"We offer the following cuisines:
-- [Cuisine Name 1]
-- [Cuisine Name 2]
-- [Cuisine Name 3]
-...and so on"
+### How to Use This Nested Data Structure:
 
-**CRITICAL**: 
-- Use the exact cuisine names as they appear in the cuisines array
-- Do not abbreviate, paraphrase, or change the names
-- Only mention cuisines that are in the provided data
+**When user asks about cuisines:**
+- Iterate through the "cuisines" array
+- List ONLY the exact "cuisine_name" values as they appear in the data
+- Example: "We offer [cuisine_name], [cuisine_name], [cuisine_name]"
+- Do NOT add words like "cuisine", "type", etc. - just use the exact names
 
-### Available Cuisines (JSON):
-${buildCuisineData()}
+**When user selects a cuisine:**
+- Find the cuisine object in the "cuisines" array where cuisine_id or cuisine_name matches
+- Access the menus array within that cuisine object
+- Show ONLY the menus that exist in that cuisine's menus array
+- Use exact "menu_name" values from cuisine.menus[].menu_name
+
+**When user asks about menu items for a selected cuisine:**
+- Navigate to the selected cuisine's menus array
+- For each menu in cuisine.menus[], show the menu name followed by its items
+- Access menu.menu_items[] to get the items for that menu
+- Use exact "menu_item_name" values from menu.menu_items[].menu_item_name
+- Format: "Under [menu_name], we have [menu_item_name], [menu_item_name], etc."
+
+**CRITICAL RULES:**
+- Always use EXACT names from the data - no modifications, abbreviations, or additions
+- When mentioning a cuisine, use the exact "cuisine_name" value
+- When mentioning a menu, use the exact "menu_name" value
+- When mentioning a menu item, use the exact "menu_item_name" value
+- Do NOT add words like "cuisine", "menu", "item", "dish" unless they are part of the actual name in the data
+- Example: If cuisine_name is "ITALIAN CUISINE", say "ITALIAN CUISINE" - do NOT say "Italian cuisine type" or "Italian"
+- **IMPORTANT**: Always use IDs (cuisine_id, menu_item_id) when calling the book_event function, NOT names
+
+### Menu Data (JSON):
+${buildMenuData()}
 
 ## Guidelines:
 - Always use the provided monthly availability data to answer availability questions
 - Be specific about which time slots are available when asked
 - If a date is fully booked, suggest alternative dates with availability
-- When users ask about cuisines, use the cuisine data to provide accurate information
-- **CRITICAL**: When asked about available cuisines, only mention cuisines that are in the provided cuisine data
-- Use the exact cuisine names as they appear in the data
-- Keep responses natural and conversational
+- **CRITICAL**: Use EXACT names from the menu data - cuisines, menus, and menu items
+- When mentioning any cuisine, menu, or menu item, use the EXACT name from the data without adding extra words
+- Keep responses natural and conversational while using exact names
 - Be helpful and patient
 
 ## Booking Process Guidelines:
 
-### Collecting Booking Information:
+### Step-by-Step Cuisine and Menu Selection Process:
+
+**STEP 1: Confirm Cuisine First**
+- First, ask the user to select a cuisine from the available options
+- List all available cuisines using their exact "cuisine_name" values from the "cuisines" array
+- Wait for the user to confirm their cuisine choice
+- Once cuisine is confirmed, remember that ALL subsequent menu items MUST be from this same cuisine
+
+**STEP 2: Show Available Menus for Selected Cuisine**
+- After cuisine is confirmed, navigate to that cuisine object in the "cuisines" array
+- Access the menus array within the selected cuisine object
+- Show ONLY the menu names from cuisine.menus[].menu_name
+- Use exact "menu_name" values as they appear in the nested structure
+- Example: "For [cuisine_name], we have the following menus: [menu_name], [menu_name], etc."
+
+**STEP 3: Show Menu Items with Their Menus**
+- Navigate to the selected cuisine's menus array
+- For each menu in cuisine.menus[], show the menu name followed by its menu items
+- Access menu.menu_items[] to get the items for that menu
+- Use exact "menu_item_name" values from menu.menu_items[].menu_item_name
+- Format: "Under [menu_name], we have [menu_item_name], [menu_item_name], etc."
+- All items shown are automatically from the selected cuisine (they're nested under it)
+
+**STEP 4: Menu Item Selection Constraints**
+- **CRITICAL CONSTRAINT 1**: Once a cuisine is selected, the user can ONLY select menu items from that same cuisine
+- Since menu items are nested under cuisines, only show items from selected_cuisine.menus[].menu_items[]
+- If user tries to select a menu item from a different cuisine, politely inform them: "I'm sorry, but all menu items must be from the same cuisine. You've already selected items from [selected cuisine name]. Would you like to continue with [selected cuisine name] or change to a different cuisine?"
+- **CRITICAL CONSTRAINT 2**: User can select ONLY ONE menu item per menu (menu = menu category)
+- Track selected items by their menu_id (from menu.menu_id)
+- If user tries to select a second item from the same menu, politely inform them: "I'm sorry, but you can only select one item per menu category. You've already selected [first item name] from [menu name]. Would you like to replace it with [new item name]?"
+- To check if a menu already has a selected item, verify if any selected item's menu_id matches the new item's menu
+
+### Collecting All Booking Information:
 1. Collect all required details: customer_name, customer_email, customer_contact, customer_address (optional), number_of_persons, date, time_slot (use time slot ID), cuisine (use cuisine ID), selected_menus (array of menu item IDs), extras (array of extra names - optional)
 
 2. BEFORE confirming booking, you MUST:
-   - Fully describe ALL booking details to the user (name, email, phone, address, event date, time slot, number of persons, cuisine, selected menus, extras if any)
+   - Fully describe ALL booking details to the user (name, email, phone, address, event date, time slot, number of persons, cuisine, selected menu items with their menu names, extras if any)
+   - When describing cuisine and menu items, use EXACT names from the data without adding extra words
+   - Show selected menu items grouped by their menu names (navigate through the nested structure to get menu names)
    - Calculate and tell the user about the PRICE:
-     * If cuisine has fixed price: Total = (cuisine price_per_person × number_of_persons)
-     * If cuisine has individual menu prices: Total = sum of all selected menu item prices
+     * Navigate to the selected cuisine in the "cuisines" array
+     * Check if cuisine.cuisine_price is not null - if so, use that: Total = (cuisine_price × number_of_persons)
+     * If cuisine.cuisine_price is null, find each selected menu item in the nested structure and sum their menu_item_price values (only items where menu_item_price is not null)
    - About EXTRAS: If the user requests any extras, clearly tell them: "Extra charges for the requested extras will be added by our booking manager, and they will contact you separately to discuss the pricing for these additional services."
+   - Verify that all selected menu items belong to the confirmed cuisine (they should all be found within selected_cuisine.menus[].menu_items[])
+   - Verify that no two selected menu items share the same menu_id (one item per menu)
 
 3. Only proceed with booking when user explicitly confirms (says "yes", "confirm", "book it", etc.)
 
@@ -240,6 +375,11 @@ IMPORTANT:
 - Use time slot ID from the availability data
 - Use cuisine ID from the menu data
 - Use menu item IDs from the menu data
+- **VERIFY** before calling the function:
+  * All selected menu items belong to the selected cuisine (can be found in selected_cuisine.menus[].menu_items[])
+  * No two selected menu items have the same menu_id (only one item per menu)
+  * Use cuisine_id from the selected cuisine object
+  * Use menu_item_id from each selected menu item (from menu.menu_items[].menu_item_id)
 - Extras should be an array of strings (names only, not IDs)
 - If customer_address is not provided, use empty string ""
 - If extras are not requested, use empty array []
@@ -318,12 +458,11 @@ IMPORTANT:
       setShowBookingConfirmation(false);
       setPendingBookingData(null);
       
-      // Close the voice chat after a delay
-      setTimeout(() => {
-        if (isMountedRef.current) {
-          onClose();
-        }
-      }, 3000);
+      // Store confirmed booking data and show success modal
+      setConfirmedBookingData(result);
+      setShowSuccessModal(true);
+      
+      // Don't close voice chat immediately - let user see the confirmation
 
     } catch (err: any) {
       console.error("❌ Error creating booking:", err);
@@ -889,95 +1028,286 @@ IMPORTANT:
   }, []);
 
   return (
-    <div
-      className="relative bg-white rounded-lg shadow-xl p-6 max-w-xl w-full"
-      style={{ backgroundColor: containerBg }}
-      onClick={(e) => e.stopPropagation()}
-    >
+    <>
+      <style jsx>{`
+        @keyframes glow {
+          0%, 100% {
+            opacity: 0.4;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 0.8;
+            transform: scale(1.05);
+          }
+        }
+        @keyframes glow-ring {
+          0%, 100% {
+            opacity: 0.3;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 0.6;
+            transform: scale(1.2);
+          }
+        }
+      `}</style>
+      <div
+        className="relative rounded-lg shadow-xl p-6 max-w-xl w-full"
+        style={{ backgroundColor: "#1a1a1a" }}
+        onClick={(e) => e.stopPropagation()}
+      >
       {/* Close Button */}
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 transition-colors"
-        style={{ color: textColor }}
+        className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-800 transition-colors"
+        style={{ color: "#ffffff" }}
       >
         <X className="w-5 h-5" />
       </button>
 
-      {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold mb-2" style={{ color: textColor }}>
-          Voice Assistant
-        </h2>
-        <p className="text-sm opacity-70" style={{ color: textColor }}>
-          {error || status}
-        </p>
-      </div>
-
       {/* Voice Status Indicator with Wave Visualization */}
       <div className="flex flex-col items-center justify-center py-6 mb-6">
-        {/* Wave Visualization */}
-        <div className="w-full max-w-md mb-4">
+        {/* Wave Visualization with Glow Effect */}
+        <div className="w-full max-w-md mb-4 relative">
           <WaveVisualization
             inputNode={inputNodeRef.current}
             outputNode={outputNodeRef.current}
             isListening={isListening}
             isSpeaking={isSpeaking}
-            containerBg={containerBg}
+            containerBg="#1a1a1a"
           />
+          {/* Glowing wave overlay effect */}
+          {(isListening || isSpeaking) && (
+            <div
+              className={`absolute inset-0 rounded-lg blur-xl opacity-60 transition-opacity duration-300 ${
+                isListening
+                  ? "bg-blue-500/50"
+                  : "bg-green-500/50"
+              }`}
+              style={{
+                animation: "glow 2s ease-in-out infinite",
+              }}
+            />
+          )}
         </div>
 
-        {/* Microphone Icon */}
+        {/* Microphone/Speaker Icon with Glow */}
         <div
-          className={`w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 ${
+          className={`w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 relative ${
             isListening
               ? "bg-blue-500 shadow-lg shadow-blue-500/50"
               : isSpeaking
               ? "bg-green-500 shadow-lg shadow-green-500/50"
-              : "bg-gray-200"
+              : "bg-gray-700"
           }`}
         >
-          <Mic
-            className={`w-12 h-12 transition-transform duration-300 ${
-              isListening ? "text-white scale-110" : isSpeaking ? "text-white scale-110" : "text-gray-400"
-            }`}
-          />
+          {/* Glowing ring effect */}
+          {(isListening || isSpeaking) && (
+            <div
+              className={`absolute inset-0 rounded-full blur-md ${
+                isListening
+                  ? "bg-blue-500/50"
+                  : "bg-green-500/50"
+              }`}
+              style={{ animation: "glow-ring 2s ease-in-out infinite" }}
+            />
+          )}
+          {isSpeaking ? (
+            <Volume2
+              className={`w-12 h-12 transition-transform duration-300 text-white scale-110 relative z-10`}
+            />
+          ) : (
+            <Mic
+              className={`w-12 h-12 transition-transform duration-300 ${
+                isListening ? "text-white scale-110 relative z-10" : "text-gray-400 relative z-10"
+              }`}
+            />
+          )}
         </div>
-        <p className="mt-4 text-sm font-medium" style={{ color: textColor }}>
-          {isListening
-            ? "🎤 Listening..."
-            : isSpeaking
-            ? "🔊 Speaking..."
-            : "⏸️ Ready"}
-        </p>
       </div>
 
-      {/* Control Buttons */}
-      <div className="flex gap-3 justify-center">
-        <button
-          onClick={startRecording}
-          disabled={isSpeaking || isListening || !sessionRef.current}
-          className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-            isSpeaking || isListening || !sessionRef.current
-              ? "bg-gray-300 cursor-not-allowed"
-              : "bg-blue-500 text-white hover:bg-blue-600"
-          }`}
-        >
-          {isListening ? "Listening..." : "Start Listening"}
-        </button>
-        <button
-          onClick={stopRecording}
-          disabled={isSpeaking || !isListening}
-          className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-            isSpeaking || !isListening
-              ? "bg-gray-300 cursor-not-allowed"
-              : "bg-red-500 text-white hover:bg-red-600"
-          }`}
-        >
-          Stop
-        </button>
-      </div>
+      {/* Success Confirmation Modal - Shows after booking is created */}
+      {showSuccessModal && confirmedBookingData && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[60] p-4">
+          <div
+            className="bg-white rounded-lg shadow-2xl max-w-2xl w-full mx-4 flex flex-col max-h-[90vh]"
+            style={{ backgroundColor: "#1a1a1a", color: "#ffffff" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Fixed Header */}
+            <div className="p-6 pb-4 border-b border-gray-700 flex-shrink-0 flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-bold mb-2" style={{ color: "#ffffff" }}>
+                  ✅ Booking Confirmed!
+                </h3>
+                <p className="text-sm opacity-70" style={{ color: "#ffffff" }}>
+                  Your booking has been submitted successfully
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  setConfirmedBookingData(null);
+                  // Close voice chat after closing success modal
+                  setTimeout(() => {
+                    if (isMountedRef.current) {
+                      onClose();
+                    }
+                  }, 300);
+                }}
+                className="p-2 rounded-full hover:bg-gray-800 transition-colors"
+                style={{ color: "#ffffff" }}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-      {/* Booking Confirmation Modal */}
+            {/* Scrollable Content */}
+            <div 
+              className="flex-1 overflow-y-auto p-6 pt-4"
+              style={{ 
+                minHeight: '200px',
+                maxHeight: 'calc(90vh - 180px)'
+              }}
+            >
+              {(() => {
+                const formatted = formatBookingForDisplay(confirmedBookingData);
+                if (!formatted) return <p style={{ color: "#ffffff" }}>Error formatting booking data</p>;
+
+                return (
+                  <div className="space-y-6">
+                    {/* Event Details */}
+                    <div>
+                      <h4 className="text-lg font-semibold mb-3" style={{ color: "#ffffff" }}>Event Details</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="opacity-70" style={{ color: "#ffffff" }}>Event Name:</span>
+                          <span className="font-medium" style={{ color: "#ffffff" }}>{formatted.eventName}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="opacity-70" style={{ color: "#ffffff" }}>Date:</span>
+                          <span className="font-medium" style={{ color: "#ffffff" }}>{formatted.date}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="opacity-70" style={{ color: "#ffffff" }}>Time:</span>
+                          <span className="font-medium" style={{ color: "#ffffff" }}>{formatted.timeSlot}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="opacity-70" style={{ color: "#ffffff" }}>Number of Persons:</span>
+                          <span className="font-medium" style={{ color: "#ffffff" }}>{formatted.numberOfPersons}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="opacity-70" style={{ color: "#ffffff" }}>Cuisine:</span>
+                          <span className="font-medium" style={{ color: "#ffffff" }}>{formatted.cuisine}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Customer Information */}
+                    <div>
+                      <h4 className="text-lg font-semibold mb-3" style={{ color: "#ffffff" }}>Customer Information</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="opacity-70" style={{ color: "#ffffff" }}>Name:</span>
+                          <span className="font-medium" style={{ color: "#ffffff" }}>{formatted.customerName}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="opacity-70" style={{ color: "#ffffff" }}>Email:</span>
+                          <span className="font-medium" style={{ color: "#ffffff" }}>{formatted.customerEmail}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="opacity-70" style={{ color: "#ffffff" }}>Contact:</span>
+                          <span className="font-medium" style={{ color: "#ffffff" }}>{formatted.customerContact}</span>
+                        </div>
+                        {formatted.customerAddress && formatted.customerAddress !== "Not provided" && (
+                          <div className="flex justify-between">
+                            <span className="opacity-70" style={{ color: "#ffffff" }}>Address:</span>
+                            <span className="font-medium text-right max-w-[60%]" style={{ color: "#ffffff" }}>{formatted.customerAddress}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Selected Menus */}
+                    {formatted.selectedMenus && formatted.selectedMenus.length > 0 && formatted.selectedMenus[0] !== "No menus selected" && (
+                      <div>
+                        <h4 className="text-lg font-semibold mb-3" style={{ color: "#ffffff" }}>Selected Menu Items</h4>
+                        <div className="space-y-2">
+                          {formatted.selectedMenus.map((menu: string, index: number) => (
+                            <div key={index} className="flex items-center">
+                              <span className="text-green-400 mr-2">•</span>
+                              <span style={{ color: "#ffffff" }}>{menu}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Extras */}
+                    {formatted.extras && formatted.extras.length > 0 && formatted.extras[0] !== "None" && (
+                      <div>
+                        <h4 className="text-lg font-semibold mb-3" style={{ color: "#ffffff" }}>Extras</h4>
+                        <div className="space-y-2">
+                          {formatted.extras.map((extra: any, index: number) => {
+                            const extraName = typeof extra === 'string' ? extra : (extra.name || 'Extra');
+                            return (
+                              <div key={index} className="flex items-center">
+                                <span className="text-yellow-400 mr-2">•</span>
+                                <span style={{ color: "#ffffff" }}>{extraName}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Estimated Price */}
+                    <div className="bg-gray-800 rounded-lg p-4">
+                      <div className="flex justify-between items-center">
+                        <span className="text-lg font-semibold" style={{ color: "#ffffff" }}>Estimated Price:</span>
+                        <span className="text-xl font-bold text-green-400">{formatted.estimatedPrice}</span>
+                      </div>
+                    </div>
+
+                    {/* Status Note */}
+                    <div className="bg-blue-900/30 border border-blue-500/50 rounded-lg p-4">
+                      <p className="text-sm" style={{ color: "#ffffff" }}>
+                        <strong>Status:</strong> Your booking is pending approval. Our team will contact you soon to confirm the details.
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Fixed Action Button */}
+            <div 
+              className="flex justify-end p-6 pt-4 border-t border-gray-700 flex-shrink-0"
+              style={{ 
+                backgroundColor: "#1a1a1a",
+              }}
+            >
+              <button
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  setConfirmedBookingData(null);
+                  // Close voice chat after closing success modal
+                  setTimeout(() => {
+                    if (isMountedRef.current) {
+                      onClose();
+                    }
+                  }, 300);
+                }}
+                className="px-6 py-2 rounded-lg font-medium transition-colors bg-green-500 text-white hover:bg-green-600"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Booking Confirmation Modal - Shows before booking is created */}
       {showBookingConfirmation && pendingBookingData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div
@@ -1133,6 +1463,7 @@ IMPORTANT:
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

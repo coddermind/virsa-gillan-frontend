@@ -152,15 +152,43 @@ export default function WaveVisualization({
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="w-full h-24 rounded-lg"
-      style={{
-        backgroundColor: containerBg,
-        opacity: isListening || isSpeaking ? 1 : 0.5,
-        transition: "opacity 0.3s ease-in-out",
-      }}
-    />
+    <div className="relative w-full h-24 rounded-lg overflow-hidden">
+      <canvas
+        ref={canvasRef}
+        className="w-full h-24 rounded-lg"
+        style={{
+          backgroundColor: containerBg,
+          opacity: isListening || isSpeaking ? 1 : 0.5,
+          transition: "opacity 0.3s ease-in-out",
+        }}
+      />
+      {/* Glowing effect overlay */}
+      {(isListening || isSpeaking) && (
+        <div
+          className={`absolute inset-0 rounded-lg pointer-events-none ${
+            isListening
+              ? "bg-blue-500/20"
+              : "bg-green-500/20"
+          }`}
+          style={{
+            boxShadow: isListening
+              ? "0 0 20px rgba(59, 130, 246, 0.5), 0 0 40px rgba(59, 130, 246, 0.3)"
+              : "0 0 20px rgba(16, 185, 129, 0.5), 0 0 40px rgba(16, 185, 129, 0.3)",
+            animation: "glow-pulse 2s ease-in-out infinite",
+          }}
+        />
+      )}
+      <style jsx>{`
+        @keyframes glow-pulse {
+          0%, 100% {
+            opacity: 0.3;
+          }
+          50% {
+            opacity: 0.6;
+          }
+        }
+      `}</style>
+    </div>
   );
 }
 
