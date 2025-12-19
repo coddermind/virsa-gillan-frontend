@@ -18,6 +18,7 @@ interface VoiceChatProps {
   itemTypes?: any[];
   subItems?: any[]; // Menu items (SubItems)
   currentMonth?: Date;
+  eventLocation?: string; // Event hall location from admin settings
 }
 
 export default function VoiceChat({
@@ -31,6 +32,7 @@ export default function VoiceChat({
   itemTypes,
   subItems,
   currentMonth,
+  eventLocation: propEventLocation = "",
 }: VoiceChatProps) {
   // UI State
   const [isListening, setIsListening] = useState(false);
@@ -42,6 +44,8 @@ export default function VoiceChat({
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [confirmedBookingData, setConfirmedBookingData] = useState<any>(null);
+  const [eventLocation, setEventLocation] = useState<string>("");
+  const [hasIntroduced, setHasIntroduced] = useState(false);
 
   // Gemini Live API refs
   const clientRef = useRef<GoogleGenAI | null>(null);
@@ -228,15 +232,59 @@ export default function VoiceChat({
       };
     }
     
+    // Format location for friendly introduction
+    const formatLocationForIntro = (location: string): string => {
+      if (!location) return "our event venue";
+      
+      // Try to extract city/state from address
+      // Example: "9171 ELK Grove Florin RD #6, ELK Grove, CA" -> "Elk Grove, California"
+      const parts = location.split(',').map(p => p.trim());
+      if (parts.length >= 2) {
+        const city = parts[parts.length - 2];
+        const state = parts[parts.length - 1];
+        // Convert state abbreviations to full names if needed
+        const stateNames: { [key: string]: string } = {
+          'CA': 'California', 'NY': 'New York', 'TX': 'Texas', 'FL': 'Florida',
+          'IL': 'Illinois', 'PA': 'Pennsylvania', 'OH': 'Ohio', 'GA': 'Georgia',
+          'NC': 'North Carolina', 'MI': 'Michigan'
+        };
+        const fullState = stateNames[state.toUpperCase()] || state;
+        return `${city}, ${fullState}`;
+      }
+      return location;
+    };
+
+    const friendlyLocation = formatLocationForIntro(eventLocation || "");
+
     // Build comprehensive system instruction
-    const systemInstruction = `You are a friendly and professional event booking assistant for an event management organization. Your role is to help customers book events through natural voice conversation.
+    const systemInstruction = `You are Jack, a friendly and professional AI event booking assistant for an event management organization. Your role is to help customers book events through natural voice conversation.
+
+## Your Identity:
+- Your name is "Jack"
+- You are an AI assistant from this event booking organization
+- The event hall location is: ${eventLocation || "our event venue"}
+- When introducing yourself, mention the location in a friendly, conversational way (not just reading the address verbatim)
+- For example, if the location is "9171 ELK Grove Florin RD #6, ELK Grove, CA", you could say something like "our beautiful event hall in Elk Grove, California" or "our venue located in Elk Grove"
+- The friendly location reference is: ${friendlyLocation}
 
 ## Your Responsibilities:
-1. Help customers check date and time slot availability
-2. Guide customers through the booking process
-3. Collect necessary booking information (name, email, phone, number of persons, date, time slot)
-4. Provide clear, concise, and helpful responses
-5. Be conversational and friendly
+1. **CRITICAL FIRST STEP**: When the conversation starts (when you first begin speaking), you MUST immediately introduce yourself as Jack. Say something warm and welcoming like: "Hi! I'm Jack, your AI assistant from [event booking organization name]. I'm here to help you book an event at ${friendlyLocation || "our beautiful venue"}. How can I assist you today?" Make it conversational, friendly, and not too long - just a warm greeting that introduces yourself and mentions the location naturally.
+2. Help customers check date and time slot availability
+3. Guide customers through the booking process
+4. Collect necessary booking information (name, email, phone, number of persons, date, time slot)
+5. Provide clear, concise, and helpful responses
+6. Be conversational, friendly, and welcoming
+7. Keep your introduction natural and AI-generated - don't use pre-written scripts, make it feel genuine and warm
+
+## Scope and Boundaries:
+**CRITICAL**: You MUST stay within the scope of event booking services. Do NOT answer questions about:
+- General knowledge unrelated to event booking
+- Other businesses or services
+- Topics outside of event booking, availability, menus, cuisines, and booking process
+- Personal advice or opinions
+- Current events, news, or politics
+
+If a user asks something outside your scope, politely redirect them: "I'm here specifically to help you with event bookings. I can help you check availability, choose cuisines and menus, or create a booking. How can I assist you with your event today?"
 
 ## Current Month Booking Availability:
 The following data shows the booking availability for ${currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}.
@@ -624,15 +672,20 @@ IMPORTANT:
       sessionRef.current = await clientRef.current.live.connect({
         model: model,
         callbacks: {
-          onopen: () => {
+          onopen: async () => {
             if (!isMountedRef.current) return;
             console.log("✅ Gemini Live API connection opened");
             setStatus("Ready");
             setError("");
-            // Auto-start listening when connection is ready
+            
+            // Start recording - the AI will introduce itself when it detects the conversation has started
+            // The system instruction tells Jack to introduce himself immediately when conversation begins
+            setHasIntroduced(true);
             setTimeout(() => {
               if (isMountedRef.current && !isRecordingRef.current) {
                 startRecording();
+                // The AI will naturally introduce itself when it receives the first audio input
+                console.log("👋 Starting recording - Jack will introduce himself when conversation begins");
               }
             }, 500);
           },

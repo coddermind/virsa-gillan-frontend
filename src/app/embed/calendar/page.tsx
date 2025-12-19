@@ -55,6 +55,7 @@ function EmbedCalendarContent() {
   const [cuisines, setCuisines] = useState<Cuisine[]>([]);
   const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
   const [subItems, setSubItems] = useState<SubItem[]>([]);
+  const [eventLocation, setEventLocation] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -118,6 +119,10 @@ function EmbedCalendarContent() {
       const loadedItemTypes = Array.isArray(data.item_types) ? data.item_types : [];
       setCuisines(loadedCuisines);
       setItemTypes(loadedItemTypes);
+      // Set event location if available
+      if (data.event_location) {
+        setEventLocation(data.event_location);
+      }
       
       // Fetch all subItems (menu items) for all cuisines and item types
       const allSubItems: SubItem[] = [];
@@ -1244,6 +1249,7 @@ function EmbedCalendarContent() {
             itemTypes={itemTypes}
             subItems={subItems}
             currentMonth={currentDate}
+            eventLocation={eventLocation}
           />
         </div>
       )}

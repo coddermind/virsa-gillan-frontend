@@ -610,7 +610,8 @@ class ApiClient {
     events: Event[]; 
     time_slots: TimeSlot[]; 
     cuisines: Cuisine[]; 
-    item_types: ItemType[] 
+    item_types: ItemType[];
+    event_location?: string;
   }> {
     const url = token 
       ? `${API_BASE_URL}/public/calendar/?token=${token}`
